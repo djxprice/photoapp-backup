@@ -55,6 +55,8 @@ Everything saves as you go. At the end of a batch you can delete the marked phot
 
 **[⬇ Download the backup tool (zip)](https://github.com/djxprice/photoapp-backup/archive/refs/heads/main.zip)**
 
+> ⚠️ **Node.js is required.** The backup tool runs on Node.js, which most PCs don't have yet. Install it first from **[nodejs.org](https://nodejs.org)**: download the **LTS** version and accept the default options. You only need to do this once. (If it's missing, the backup window says so.)
+
 Backs up **all photos** from your phone to a folder or drive on your PC over USB, filed by month (`YYYY/MM/`), with PhotoApp's tags and notes saved beside each tagged photo (`<photo>.json`). Every copy is verified by content hash, re-runs only copy what's new, and it **never deletes anything from your phone**. It leaves a small receipt on the phone so the app's *Free up space* knows what's safely on the PC.
 
 **Requirements:** Windows 10/11 and [Node.js](https://nodejs.org) (LTS). No other installs.
