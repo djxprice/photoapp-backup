@@ -1,0 +1,10 @@
+{
+  "name": "photoapp-backup",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PhotoApp PC backup tool: back up an Android phone's photos and PhotoApp metadata to a PC folder over USB.",
+  "scripts": {
+    "test": "node --test test/exif.test.js test/plan.test.js test/backup.test.js",
+    "backup": "node backup.js"
+  }
+}
