@@ -8,7 +8,7 @@ This repository holds the **Android app download**, a **how-to guide**, and the 
 
 ## 1. Install the app (Android)
 
-**[⬇ Download the app (preview build, ~94 MB)](https://expo.dev/artifacts/eas/bkMIyfarIiXp6En79oZN6a0kCQIaUs_D0UuW7U4OgSM.apk)**, or open the [build page](https://expo.dev/accounts/djxprice/projects/photoapp/builds/49ce57bf-254a-47bd-b36a-1e4761529348) on your phone (or scan its QR code from a PC). *Hosted by Expo; this link expires on 27 Oct 2026, and new builds get a new link here.*
+**[⬇ Download the app (preview build, ~94 MB)](https://expo.dev/artifacts/eas/Zdn09_QGUU0m2O3ejn0BXOBQM_1_gsE9IE9zQkiQNto.apk)**, or open the [build page](https://expo.dev/accounts/djxprice/projects/photoapp/builds/a2258d31-8fcd-488f-88ec-8f664ac6b94c) on your phone (or scan its QR code from a PC). *Hosted by Expo; this link expires on 28 Oct 2026, and new builds get a new link here.*
 
 1. Open the downloaded `.apk` on the phone. If asked, allow your browser to **install unknown apps**.
 2. On a **Samsung**, if the install is blocked, turn off *Settings → Security and privacy → Auto Blocker* for the install (turn it back on afterwards).
@@ -27,6 +27,7 @@ PhotoApp shows your **newest untagged photos**, 20 at a time (change this in Set
 
 - **Caption:** type what the moment was ("What's this moment?").
 - **Tags:** type a tag and press Enter or comma to add it; tap a suggestion to reuse one of your common tags; tap a tag to remove it.
+- **Same as previous:** copies the caption, tags, note and significance from the previous photo. On the first photo of a new batch, it uses the last ones you entered.
 - **Significance:** **Utility** (receipts, screenshots, reminders), **Normal**, or **Important** (the memories you'll want to find again). Important opens the note.
 - **+ Add note:** anything worth remembering: who, why, what happened.
 
@@ -35,6 +36,7 @@ Then:
 | Button | What it does |
 |---|---|
 | **Next** (green) | Saves and moves to the next photo. Swiping left/right on the photo also works. |
+| **←** (left arrow) | Saves and goes back to the previous photo. |
 | **Skip** (yellow) | Marks the photo as reviewed with nothing to add. |
 | 🗑 **Trash** | *Marks* the photo for deletion (tap **UNDO** within 5 seconds to take it back). Marked photos are deleted **together at the end**, after Android asks you to confirm. |
 | **✓ Done** (top left) | Stop for now: shows what you've reviewed and what's left. **Done for now** then closes the app. Anything you haven't reviewed comes back next time. |
@@ -43,11 +45,14 @@ Everything saves as you go. At the end of a batch you can delete the marked phot
 
 ### Elsewhere
 
-- **✦ (top bar): Revisit memories:** a handful of your tagged photos, Important ones most often. Swipe through them.
+- **✦ (top bar): Revisit memories:** your photos, a few at a time; swipe through them.
+  - **Edit** (top right) opens the same caption, tags, significance and note as the daily review. **Next** saves and moves on; **Done** saves and goes back to the memory.
+  - **More** (on the last memory) shows the next photos you haven't seen yet. Once you've seen them all, it starts over.
 - **Grid (top bar): Choose photos:** pick any photos to tag or edit; a ✓ means already reviewed.
 - **⚙ Settings:**
   - **Photo folders:** which folders feed your review (Camera by default; tick others you use).
   - **Photos per session:** 10, 20 or 50.
+  - **Revisit memories:** how many photos per visit (any number from 1 to 999); the order (**Oldest to Newest**, **Newest to Oldest** or **Random**); and which photos (**Important**, **Tagged**, which includes Important, or **All**, which includes untagged photos from your photo folders). Changing the order or which photos starts over.
   - **Tag backup:** the folder your tag files go to.
   - **Free up space:** only after a PC backup (below). Deletes photos from the phone that the PC backup has verified copies of, keeping the ones you choose (tagged / Utility / Important). Android asks to confirm.
 
