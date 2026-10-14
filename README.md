@@ -8,7 +8,7 @@ This repository holds the **Android app download**, a **how-to guide**, and the 
 
 ## 1. Install the app (Android)
 
-**[⬇ Download the app (preview build, ~94 MB)](https://expo.dev/artifacts/eas/lEMcQlY3zfi4owI9aV8mtCxjzh0eU9YAWkFihRC0vbE.apk)**, or open the [build page](https://expo.dev/accounts/djxprice/projects/photoapp/builds/960e21c2-2c1b-4c8e-a29c-e7927818cc81) on your phone (or scan its QR code from a PC). *Hosted by Expo; this link expires on 27 Oct 2026, and new builds get a new link here.*
+**[⬇ Download the app (preview build, ~94 MB)](https://expo.dev/artifacts/eas/-5pc093OwmpFz_WO400gNgw7Adb-rrcEiOUniHkrUb4.apk)**, or open the [build page](https://expo.dev/accounts/djxprice/projects/photoapp/builds/7104f7e3-e6cd-4450-91d8-280ff91aa596) on your phone (or scan its QR code from a PC). *Hosted by Expo; this link expires on 27 Oct 2026, and new builds get a new link here.*
 
 1. Open the downloaded `.apk` on the phone. If asked, allow your browser to **install unknown apps**.
 2. On a **Samsung**, if the install is blocked, turn off *Settings → Security and privacy → Auto Blocker* for the install (turn it back on afterwards).
