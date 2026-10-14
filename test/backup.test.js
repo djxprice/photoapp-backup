@@ -130,20 +130,25 @@ test('phone mode: only handled files are marked pulled; staged photos are moved'
   const dest = tmp('dest');
   const staging = path.join(dest, '.photoapp', 'staging');
   const bytes = Buffer.from('phone-photo');
+  // The tag folder is deliberately NOT the author's folder name: the receipt
+  // must go wherever the tag files actually are.
+  const sidecarRel = `DCIM/PhotoTags/${md5(bytes)}.json`;
   const pull = async () => {
     put(staging, 'DCIM/Camera/20260720_154654.jpg', bytes);
+    put(staging, sidecarRel, sidecar(md5(bytes)));
     return {
       phone: 'Test Phone',
       errors: [],
       files: [
         { rel: 'DCIM/Camera/20260720_154654.jpg', size: bytes.length, modified: '', sig: 'a', kind: 'image', already: false, staged: true },
         { rel: 'DCIM/Camera/failed.jpg', size: 9, modified: '', sig: 'b', kind: 'image', already: false, staged: false },
+        { rel: sidecarRel, size: 10, modified: '', sig: 'c', kind: 'sidecar', already: false, staged: true },
       ],
     };
   };
   let pushed = null;
-  const push = async ({ file }) => {
-    pushed = file;
+  const push = async ({ file, folder }) => {
+    pushed = { file, folder };
     return { pushed: true, errors: [] };
   };
 
@@ -151,10 +156,106 @@ test('phone mode: only handled files are marked pulled; staged photos are moved'
 
   assert.strictEqual(r.copied, 1);
   assert.ok(r.receiptPushed);
-  assert.strictEqual(pushed, r.receiptFile);
+  assert.deepStrictEqual(pushed, { file: r.receiptFile, folder: 'DCIM/PhotoTags' });
   const pulled = JSON.parse(fs.readFileSync(path.join(dest, '.photoapp', 'pulled.json'), 'utf8'));
-  assert.deepStrictEqual(Object.keys(pulled), ['DCIM/Camera/20260720_154654.jpg']);
+  assert.deepStrictEqual(Object.keys(pulled).sort(), ['DCIM/Camera/20260720_154654.jpg', sidecarRel].sort());
   assert.ok(!fs.existsSync(staging), 'staging emptied and removed');
+});
+
+test('phone mode with no tag files: the receipt is not pushed, and that is not an error', async () => {
+  const dest = tmp('dest');
+  const staging = path.join(dest, '.photoapp', 'staging');
+  const bytes = Buffer.from('untagged-photo');
+  const pull = async () => {
+    put(staging, 'DCIM/Camera/20260720_154654.jpg', bytes);
+    return {
+      phone: 'Test Phone',
+      errors: [],
+      files: [{ rel: 'DCIM/Camera/20260720_154654.jpg', size: bytes.length, modified: '', sig: 'a', kind: 'image', already: false, staged: true }],
+    };
+  };
+  let pushCalls = 0;
+  const push = async () => {
+    pushCalls += 1;
+    return { pushed: true, errors: [] };
+  };
+  const logs = [];
+
+  const r = await runBackup({ to: dest, pull, push, log: (m) => logs.push(m) });
+
+  assert.strictEqual(r.copied, 1);
+  assert.strictEqual(pushCalls, 0);
+  assert.strictEqual(r.receiptPushed, false);
+  assert.deepStrictEqual(r.errors, []);
+  assert.ok(logs.some((m) => /No PhotoApp tag folder/.test(m)));
+});
+
+test('a photo missing on the PC is copied again and never claimed in a receipt', async () => {
+  const src = tmp('src');
+  const dest = tmp('dest');
+  const a = Buffer.from('photo-a');
+  const b = Buffer.from('photo-b');
+  put(src, 'DCIM/Camera/20260101_000001.jpg', a);
+  put(src, 'DCIM/Camera/20260101_000002.jpg', b);
+  await runBackup({ to: dest, from: src, log: quiet });
+
+  // A's PC copy disappears, but the source still has it: it is copied again.
+  fs.unlinkSync(path.join(dest, '2026', '01', '20260101_000001.jpg'));
+  const r2 = await runBackup({ to: dest, from: src, log: quiet });
+  assert.strictEqual(r2.missingOnPc, 1);
+  assert.strictEqual(r2.copied, 1);
+  assert.ok(fs.existsSync(path.join(dest, '2026', '01', '20260101_000001.jpg')));
+
+  // A's PC copy disappears AND the source no longer has it: the receipt must
+  // not list it as safely on the PC.
+  fs.unlinkSync(path.join(dest, '2026', '01', '20260101_000001.jpg'));
+  fs.unlinkSync(path.join(src, 'DCIM', 'Camera', '20260101_000001.jpg'));
+  const r3 = await runBackup({ to: dest, from: src, log: quiet });
+  assert.strictEqual(r3.missingOnPc, 1);
+  const receipt = JSON.parse(fs.readFileSync(r3.receiptFile, 'utf8'));
+  assert.deepStrictEqual(receipt.photos.map((p) => p.hash), [md5(b)]);
+  const index = JSON.parse(fs.readFileSync(path.join(dest, '.photoapp', 'index.json'), 'utf8'));
+  assert.deepStrictEqual(Object.keys(index.photos), [md5(b)]);
+});
+
+test('a newer tag file replaces an older one still waiting for its photo', async () => {
+  const s1 = tmp('s1');
+  const s2 = tmp('s2');
+  const s3 = tmp('s3');
+  const dest = tmp('dest');
+  const bytes = Buffer.from('photo-with-edits');
+  const h = md5(bytes);
+
+  // Run 1: the tag file arrives before its photo (caption A) and waits.
+  put(s1, `DCIM/PhotoTags/${h}.json`, sidecar(h, { caption: 'A' }));
+  await runBackup({ to: dest, from: s1, log: quiet });
+
+  // Run 2: the edited tag file (caption B) and the photo arrive together.
+  put(s2, `DCIM/PhotoTags/${h}.json`, sidecar(h, { caption: 'B' }));
+  put(s2, 'DCIM/Camera/20260720_120000.jpg', bytes);
+  await runBackup({ to: dest, from: s2, log: quiet });
+  const metaFile = path.join(dest, '2026', '07', '20260720_120000.json');
+  assert.strictEqual(JSON.parse(fs.readFileSync(metaFile, 'utf8')).caption, 'B');
+  assert.deepStrictEqual(fs.readdirSync(path.join(dest, '.photoapp', 'orphan-sidecars')), []);
+
+  // Run 3 (nothing new): the stale waiting copy must not come back.
+  await runBackup({ to: dest, from: s3, log: quiet });
+  assert.strictEqual(JSON.parse(fs.readFileSync(metaFile, 'utf8')).caption, 'B');
+});
+
+test('redacted-hash tag files are reported, not left waiting; other .json files are ignored', async () => {
+  const src = tmp('src');
+  const dest = tmp('dest');
+  const red = 'c'.repeat(32);
+  put(src, `DCIM/PhotoTags/${red}.json`, sidecar(red, { hashSource: 'redacted' }));
+  put(src, `Download/${'d'.repeat(32)}.json`, JSON.stringify({ something: 'else' }));
+
+  const r = await runBackup({ to: dest, from: src, log: quiet });
+
+  assert.strictEqual(r.redacted, 1);
+  assert.strictEqual(r.ignoredJson, 1);
+  assert.strictEqual(r.orphans, 0);
+  assert.deepStrictEqual(r.errors, []);
 });
 
 test('dry run copies nothing', async () => {

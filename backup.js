@@ -29,6 +29,7 @@ const {
   resolveMonth,
   destinationFor,
   sidecarPathFor,
+  mostCommonDir,
 } = require('./lib/plan');
 
 const toPosix = (p) => p.split(path.sep).join('/');
@@ -45,7 +46,10 @@ function runMtp(args) {
     let err = '';
     ps.stderr.on('data', (d) => (err += d));
     ps.on('error', reject);
-    ps.on('close', (code) => (code === 0 ? resolve() : reject(new Error(err.trim() || `mtp.ps1 exited ${code}`))));
+    // Keep only the message line: PowerShell appends a stack trace
+    // ("At ...\mtp.ps1:53 char:30 ...") that means nothing to users.
+    const firstLine = () => err.trim().split(/\r?\n/)[0];
+    ps.on('close', (code) => (code === 0 ? resolve() : reject(new Error(firstLine() || `mtp.ps1 exited ${code}`))));
   });
 }
 
@@ -57,8 +61,13 @@ async function pullFromPhone({ staging, pulledFile, resultFile, listOnly }) {
   return readMtpResult(resultFile);
 }
 
-async function pushToPhone({ file, staging, pulledFile, resultFile }) {
-  await runMtp(['-Staging', staging, '-Pulled', pulledFile, '-Result', resultFile, '-PushFile', file]);
+// Copy a file (the receipt) into `folder` on the phone: the folder holding
+// PhotoApp's tag files, wherever the user put it.
+async function pushToPhone({ file, folder, staging, pulledFile, resultFile }) {
+  await runMtp([
+    '-Staging', staging, '-Pulled', pulledFile, '-Result', resultFile,
+    '-PushFile', file, '-PushFolder', folder,
+  ]);
   return readMtpResult(resultFile);
 }
 
@@ -109,6 +118,34 @@ async function runBackup({
 
   const index = readJson(indexFile, { version: 1, photos: {} }); // hash -> entry
   const pulled = readJson(pulledFile, {}); // phone rel -> "size|modified"
+  const stateFile = path.join(meta, 'receipt-state.json');
+  const state = readJson(stateFile, { photoCount: -1, sidecarFolder: null });
+
+  // 0) Re-check the PC side first. An index entry whose file is missing or has
+  //    changed size is dropped, and its phone photo (and tag file) un-marked
+  //    as pulled, so it is re-copied this run and never claimed in a receipt
+  //    as "safely on the PC" (Free up space trusts receipts).
+  const missingOnPc = [];
+  for (const [hash, e] of Object.entries(index.photos)) {
+    let ok = false;
+    try {
+      ok = fs.statSync(path.join(to, fromPosix(e.path))).size === e.size;
+    } catch {
+      ok = false;
+    }
+    if (ok) continue;
+    missingOnPc.push(e.path);
+    delete index.photos[hash];
+    if (e.from) delete pulled[e.from];
+    for (const k of Object.keys(pulled)) if (k.endsWith(`/${hash}.json`)) delete pulled[k];
+  }
+  if (missingOnPc.length) {
+    log(`${missingOnPc.length} photo(s) are missing or changed on the PC; they will be copied again.`);
+    if (!dryRun) {
+      writeJson(indexFile, index);
+      if (!from) writeJson(pulledFile, pulled); // the phone pull reads this
+    }
+  }
   const pathOwner = new Map(Object.entries(index.photos).map(([h, e]) => [e.path, h]));
 
   let sourceDir;
@@ -138,24 +175,48 @@ async function runBackup({
     const newImages = toProcess.filter((f) => f.kind === 'image');
     const bytes = newImages.reduce((s, f) => s + Number(f.size || 0), 0);
     log(`Dry run: ${newImages.length} new/changed photos (${(bytes / 1e9).toFixed(2)} GB), ` +
-      `${images.length - newImages.length} already backed up. Nothing copied.`);
-    return { dryRun: true, newPhotos: newImages.length, errors };
+      `${images.length - newImages.length} already backed up` +
+      `${missingOnPc.length ? `, plus ${missingOnPc.length} missing on the PC that a real run copies again` : ''}` +
+      '. Nothing copied.');
+    return { dryRun: true, newPhotos: newImages.length, missingOnPc: missingOnPc.length, errors };
   }
 
-  const stats = { copied: 0, present: 0, tagged: 0, sidecarsWritten: 0, orphans: 0, failed: 0 };
+  const stats = {
+    copied: 0,
+    present: 0,
+    tagged: 0,
+    sidecarsWritten: 0,
+    orphans: 0,
+    redacted: 0,
+    ignoredJson: 0,
+    failed: 0,
+  };
   const processed = new Set(); // listing rels handled successfully
   const pending = (f) => fs.existsSync(path.join(sourceDir, fromPosix(f.rel)));
 
   // 1) Sidecars: hash -> record (staged copies are cleaned up at the end).
+  //    Any <md5>.json is a candidate; ones that aren't PhotoApp tag files are
+  //    ignored. Tag files hashed while Android was blanking GPS bytes
+  //    (hashSource "redacted") can never match the real photo: they're counted
+  //    and reported instead of waiting forever; the app re-hashes and replaces
+  //    them once it has photo-location access.
   const sidecars = new Map();
   for (const f of toProcess.filter((x) => x.kind === 'sidecar' && pending(x))) {
     const rec = readJson(path.join(sourceDir, fromPosix(f.rel)), null);
-    if (rec && rec.hashAlgorithm === 'md5' && /^[0-9a-f]{32}$/.test(rec.contentHash || '')) {
-      sidecars.set(rec.contentHash, { record: rec, rel: f.rel });
+    processed.add(f.rel);
+    if (!rec || rec.hashAlgorithm !== 'md5' || !/^[0-9a-f]{32}$/.test(rec.contentHash || '')) {
+      stats.ignoredJson += 1;
+    } else if (rec.hashSource === 'redacted') {
+      stats.redacted += 1;
     } else {
-      errors.push(`unreadable sidecar ${f.rel}`);
+      sidecars.set(rec.contentHash, { record: rec, rel: f.rel });
     }
   }
+  // The folder the user keeps PhotoApp's tag files in (receipts go there too).
+  const sidecarFolder =
+    mostCommonDir([...sidecars.values()].map((s) => s.rel)) ||
+    state.sidecarFolder ||
+    mostCommonDir(listing.filter((f) => f.kind === 'sidecar').map((f) => f.rel));
 
   // 2) Photos.
   for (const f of toProcess.filter((x) => x.kind === 'image')) {
@@ -204,11 +265,18 @@ async function runBackup({
 
   // 3) Place sidecars beside their photos; unmatched ones wait in orphan-sidecars/
   //    (their photo may be in a folder not yet backed up) and are retried each run.
+  //    A waiting copy is deleted once a newer one for the same photo arrives from
+  //    the phone (otherwise it could later overwrite the newer caption), or if
+  //    it can never match (redacted hash).
   for (const file of fs.existsSync(orphanDir) ? fs.readdirSync(orphanDir) : []) {
-    const rec = readJson(path.join(orphanDir, file), null);
-    if (rec && rec.contentHash && !sidecars.has(rec.contentHash)) {
-      sidecars.set(rec.contentHash, { record: rec, rel: null, orphanFile: file });
+    const orphanPath = path.join(orphanDir, file);
+    const rec = readJson(orphanPath, null);
+    if (!rec || !rec.contentHash) continue;
+    if (sidecars.has(rec.contentHash) || rec.hashSource === 'redacted') {
+      fs.unlinkSync(orphanPath);
+      continue;
     }
+    sidecars.set(rec.contentHash, { record: rec, rel: null, orphanFile: file });
   }
   for (const [hash, sc] of sidecars) {
     const photo = index.photos[hash];
@@ -249,8 +317,7 @@ async function runBackup({
   //    deleting it. A new receipt is written only when the inventory changed.
   let receiptFile = null;
   let receiptPushed = false;
-  const stateFile = path.join(meta, 'receipt-state.json');
-  const state = readJson(stateFile, { photoCount: -1 });
+  let receiptNote = null;
   const inventory = Object.entries(index.photos)
     .map(([hash, e]) => ({ hash, from: e.from, size: e.size }))
     .sort((a, b) => a.hash.localeCompare(b.hash));
@@ -267,15 +334,24 @@ async function runBackup({
       photos: inventory,
     });
     if (from) {
-      writeJson(stateFile, { photoCount: inventory.length });
+      writeJson(stateFile, { ...state, photoCount: inventory.length });
+    } else if (!sidecarFolder) {
+      // No tag files on the phone yet, so there's no PhotoApp folder to put the
+      // receipt in. Not an error; retried next run.
+      receiptNote =
+        'No PhotoApp tag folder found on the phone yet, so the receipt was not copied to it ' +
+        '(Free up space needs it). In the app, choose a backup folder under Settings > Tag backup ' +
+        'and tag a photo, then run the backup again.';
     } else {
       try {
-        const r = await push({ file: receiptFile, staging, pulledFile, resultFile });
+        const r = await push({ file: receiptFile, folder: sidecarFolder, staging, pulledFile, resultFile });
         receiptPushed = Boolean(r.pushed);
         errors.push(...r.errors);
         // Only remember the inventory as delivered once it reached the phone,
         // so a failed push is retried next run.
-        if (receiptPushed) writeJson(stateFile, { photoCount: inventory.length });
+        if (receiptPushed) {
+          writeJson(stateFile, { photoCount: inventory.length, sidecarFolder });
+        }
       } catch (e) {
         errors.push(`receipt not pushed to phone: ${e.message}`);
       }
@@ -299,12 +375,32 @@ async function runBackup({
       `. ${stats.tagged} tagged photo(s) on the PC; ${stats.sidecarsWritten} metadata file(s) written` +
       `${stats.orphans ? `, ${stats.orphans} waiting for their photo` : ''}.`
   );
-  if (receiptFile) log(`Receipt: ${receiptFile}${from ? '' : receiptPushed ? ' (copied to phone)' : ' (NOT copied to phone)'}`);
+  if (stats.redacted) {
+    log(
+      `${stats.redacted} tag file(s) on the phone were saved before PhotoApp had photo-location ` +
+        'access, so they cannot be matched to their photos yet. Open PhotoApp on the phone ' +
+        '(it refreshes them automatically), then run the backup again.'
+    );
+  }
+  if (receiptFile) {
+    log(
+      `Receipt: ${receiptFile}` +
+        (from ? '' : receiptPushed ? ` (copied to the phone's ${sidecarFolder})` : ' (NOT copied to the phone)')
+    );
+  }
+  if (receiptNote) log(receiptNote);
   if (errors.length) {
     log(`${errors.length} problem(s):`);
     for (const e of errors) log(`  - ${e}`);
   }
-  return { ...stats, errors, receiptFile, receiptPushed };
+  return {
+    ...stats,
+    errors,
+    receiptFile,
+    receiptPushed,
+    sidecarFolder,
+    missingOnPc: missingOnPc.length,
+  };
 }
 
 function pruneEmptyDirs(dir) {

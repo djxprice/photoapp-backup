@@ -2,14 +2,16 @@
   PhotoApp PC backup - phone access over USB (Windows MTP via Shell.Application).
 
   Node cannot talk to MTP devices; this helper does only the device I/O:
-    - list photo files (and PhotoApp sidecars) on the phone,
+    - list photo files and PhotoApp tag files (sidecars) on the phone,
     - copy NEW or CHANGED ones into a local staging folder,
-    - optionally push one file (a backup receipt) back to the phone.
+    - or (push mode) copy one file - a backup receipt - into a phone folder.
   It never deletes or modifies anything on the phone.
 
   Usage:
     powershell -NoProfile -ExecutionPolicy Bypass -File mtp.ps1 `
-      -Staging <dir> -Pulled <pulled.json> -Result <result.json> [-ListOnly] [-PushFile <file>]
+      -Staging <dir> -Pulled <pulled.json> -Result <result.json> [-ListOnly]
+    powershell ... -File mtp.ps1 -Staging <dir> -Pulled <pulled.json> -Result <result.json> `
+      -PushFile <file> -PushFolder <phone folder, e.g. DCIM/PhotoApp>
 
   Pulled index: JSON object { "<phone relative path>": "<size>|<modified ISO>" }
   of files already backed up; matching entries are skipped.
@@ -19,14 +21,23 @@ param(
   [Parameter(Mandatory = $true)][string]$Pulled,
   [Parameter(Mandatory = $true)][string]$Result,
   [switch]$ListOnly,
-  [string]$PushFile
+  [string]$PushFile,
+  [string]$PushFolder
 )
 
 $ErrorActionPreference = 'Stop'
 
-$Roots = @('DCIM', 'Pictures', 'Download')
+# Folders scanned. Photos are backed up from the first three. PhotoApp's tag
+# files (<md5>.json) are recognised in ANY of them: the user picks that folder
+# in the app, so its name and location vary (Documents is searched for tag
+# files only).
+$Roots = @(
+  @{ Name = 'DCIM'; Images = $true },
+  @{ Name = 'Pictures'; Images = $true },
+  @{ Name = 'Download'; Images = $true },
+  @{ Name = 'Documents'; Images = $false }
+)
 $ImageExts = @('.jpg', '.jpeg', '.heic', '.heif', '.png', '.webp', '.dng')
-$SidecarFolder = 'DCIM/photoAppMetadada'
 $SidecarName = '^[0-9a-fA-F]{32}\.json$'
 
 function Write-Utf8Json($path, $value) {
@@ -68,11 +79,11 @@ $phone = Get-Phone
 $files = New-Object System.Collections.ArrayList
 $errors = New-Object System.Collections.ArrayList
 
-# Push mode: copy one local file (a backup receipt) into the phone's sidecar
-# folder, then stop - no listing or pulling.
+# Push mode: copy one local file (a backup receipt) into the given phone folder
+# (the folder holding PhotoApp's tag files), then stop - no listing or pulling.
 if ($PushFile) {
-  $target = Get-FolderByPath $phone.Root $SidecarFolder
   $pushed = $false
+  $target = if ($PushFolder) { Get-FolderByPath $phone.Root $PushFolder } else { $null }
   if ($target) {
     $target.CopyHere($PushFile, 4 + 16 + 1024)
     $name = [IO.Path]::GetFileName($PushFile)
@@ -82,40 +93,62 @@ if ($PushFile) {
       $pushed = [bool](Get-Child $target $name)
     }
   } else {
-    [void]$errors.Add("phone folder $SidecarFolder not found; receipt not pushed")
+    [void]$errors.Add("phone folder '$PushFolder' not found; receipt not copied to the phone")
   }
   Write-Utf8Json $Result ([ordered]@{ phone = $phone.Name; files = @(); errors = $errors; pushed = $pushed })
   exit 0
 }
 
+# True once nothing else (the MTP copy) has the file open.
+function Test-FileReleased($path) {
+  try {
+    $fs = [IO.File]::Open($path, 'Open', 'Read', 'None')
+    $fs.Dispose()
+    return $true
+  } catch {
+    return $false
+  }
+}
+
+# Copy one phone item into $destDir. Returns 'ok', 'nosize' or 'timeout'.
+# A leftover staged file is never trusted (it may be a partial copy from an
+# interrupted run); the copy only counts once it has the phone's exact size
+# AND Windows has released it.
 function Copy-FromPhone($item, $destDir, $expectedSize) {
+  if ($expectedSize -le 0) { return 'nosize' }
   New-Item -ItemType Directory -Force -Path $destDir | Out-Null
   $target = Join-Path $destDir $item.Name
-  if ((Test-Path -LiteralPath $target) -and ((Get-Item -LiteralPath $target).Length -eq $expectedSize)) { return $true }
+  if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Force }
   # 4 = no progress UI, 16 = yes to all, 1024 = no error UI. MTP copies are
-  # asynchronous, so wait for the file to reach its full size.
+  # asynchronous, so poll until done.
   $phone.Shell.Namespace($destDir).CopyHere($item, 4 + 16 + 1024)
   $deadline = (Get-Date).AddSeconds(120 + [math]::Ceiling($expectedSize / 2MB))
   while ((Get-Date) -lt $deadline) {
-    if ((Test-Path -LiteralPath $target) -and ((Get-Item -LiteralPath $target).Length -eq $expectedSize)) { return $true }
+    if ((Test-Path -LiteralPath $target) -and
+        ((Get-Item -LiteralPath $target).Length -eq $expectedSize) -and
+        (Test-FileReleased $target)) {
+      return 'ok'
+    }
     Start-Sleep -Milliseconds 150
   }
-  return $false
+  return 'timeout'
 }
 
-function Visit($folder, $rel) {
+function Visit($folder, $rel, $images) {
   foreach ($item in @($folder.Items())) {
     $childRel = if ($rel) { "$rel/$($item.Name)" } else { $item.Name }
     if ($item.IsFolder) {
       if ($item.Name.StartsWith('.')) { continue } # .thumbnails, .trash etc.
-      Visit $item.GetFolder $childRel
+      Visit $item.GetFolder $childRel $images
       continue
     }
     $ext = [IO.Path]::GetExtension($item.Name).ToLowerInvariant()
-    $isSidecar = ($rel -eq $SidecarFolder) -and ($item.Name -match $SidecarName)
-    if (-not $isSidecar -and -not ($ImageExts -contains $ext)) { continue }
+    $isSidecar = $item.Name -match $SidecarName
+    $isImage = $images -and ($ImageExts -contains $ext)
+    if (-not $isSidecar -and -not $isImage) { continue }
 
-    $size = [int64]$item.ExtendedProperty('System.Size')
+    $sizeRaw = $item.ExtendedProperty('System.Size')
+    $size = if ($sizeRaw) { [int64]$sizeRaw } else { 0 }
     $modRaw = $item.ExtendedProperty('System.DateModified')
     $modified = if ($modRaw) { ([datetime]$modRaw).ToUniversalTime().ToString('o') } else { '' }
     $sig = "$size|$modified"
@@ -125,8 +158,10 @@ function Visit($folder, $rel) {
     if (-not $already -and -not $ListOnly) {
       $destDir = Join-Path $Staging ($rel -replace '/', '\')
       try {
-        $staged = Copy-FromPhone $item $destDir $size
-        if (-not $staged) { [void]$errors.Add("timed out copying $childRel") }
+        $outcome = Copy-FromPhone $item $destDir $size
+        $staged = $outcome -eq 'ok'
+        if ($outcome -eq 'nosize') { [void]$errors.Add("the phone reported no size for $childRel; skipped (will retry next run)") }
+        elseif ($outcome -eq 'timeout') { [void]$errors.Add("timed out copying $childRel (will retry next run)") }
       } catch {
         [void]$errors.Add("failed copying ${childRel}: $($_.Exception.Message)")
       }
@@ -145,8 +180,8 @@ function Visit($folder, $rel) {
 }
 
 foreach ($root in $Roots) {
-  $f = Get-Child $phone.Root $root
-  if ($f) { Visit $f.GetFolder $root }
+  $f = Get-Child $phone.Root $root.Name
+  if ($f) { Visit $f.GetFolder $root.Name $root.Images }
 }
 
 Write-Utf8Json $Result ([ordered]@{

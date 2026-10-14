@@ -9,7 +9,18 @@ const {
   resolveMonth,
   destinationFor,
   sidecarPathFor,
+  mostCommonDir,
 } = require('../lib/plan');
+
+test('mostCommonDir finds the folder holding most files', () => {
+  assert.strictEqual(
+    mostCommonDir(['DCIM/PhotoTags/a.json', 'DCIM/PhotoTags/b.json', 'Download/c.json']),
+    'DCIM/PhotoTags'
+  );
+  assert.strictEqual(mostCommonDir(['top.json']), null);
+  assert.strictEqual(mostCommonDir([]), null);
+  assert.strictEqual(mostCommonDir(null), null);
+});
 
 test('image and sidecar detection', () => {
   assert.ok(isImage('a.JPG') && isImage('b.heic') && isImage('c.dng'));

@@ -78,7 +78,8 @@ node backup.js --to "E:\Photos" --dry-run    # list what would be copied
 node backup.js --to "E:\Photos" --from <dir> # organise an already-copied folder
 ```
 
-- Reads the phone's `DCIM`, `Pictures` and `Download` folders over the same USB connection File Explorer uses (MTP via `mtp.ps1`); photos only, no videos; no developer mode needed.
+- Reads the phone's `DCIM`, `Pictures` and `Download` folders over the same USB connection File Explorer uses (MTP via `mtp.ps1`); photos only, no videos; no developer mode needed. PhotoApp's tag files are found wherever you keep them inside `DCIM`, `Pictures`, `Download` or `Documents`.
+- Every run first re-checks the PC copies; any that are missing or changed are copied again and never counted as backed up.
 - Date comes from PhotoApp's metadata, then EXIF, then the filename, then the phone's file date. Photos with no date go to `undated/`.
 - The same photo is never stored twice (even if renamed); different photos with the same name get a short hash suffix.
 - Bookkeeping lives in `<backup folder>\.photoapp\` (index, pull log, receipts).
