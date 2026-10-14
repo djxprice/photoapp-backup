@@ -8,7 +8,7 @@ This repository holds the **Android app download**, a **how-to guide**, and the 
 
 ## 1. Install the app (Android)
 
-**[⬇ Download the app (preview build, ~94 MB)](https://expo.dev/artifacts/eas/-5pc093OwmpFz_WO400gNgw7Adb-rrcEiOUniHkrUb4.apk)**, or open the [build page](https://expo.dev/accounts/djxprice/projects/photoapp/builds/7104f7e3-e6cd-4450-91d8-280ff91aa596) on your phone (or scan its QR code from a PC). *Hosted by Expo; this link expires on 27 Oct 2026, and new builds get a new link here.*
+**[⬇ Download the app (preview build, ~94 MB)](https://expo.dev/artifacts/eas/bkMIyfarIiXp6En79oZN6a0kCQIaUs_D0UuW7U4OgSM.apk)**, or open the [build page](https://expo.dev/accounts/djxprice/projects/photoapp/builds/49ce57bf-254a-47bd-b36a-1e4761529348) on your phone (or scan its QR code from a PC). *Hosted by Expo; this link expires on 27 Oct 2026, and new builds get a new link here.*
 
 1. Open the downloaded `.apk` on the phone. If asked, allow your browser to **install unknown apps**.
 2. On a **Samsung**, if the install is blocked, turn off *Settings → Security and privacy → Auto Blocker* for the install (turn it back on afterwards).
@@ -37,9 +37,9 @@ Then:
 | **Next** (green) | Saves and moves to the next photo. Swiping left/right on the photo also works. |
 | **Skip** (yellow) | Marks the photo as reviewed with nothing to add. |
 | 🗑 **Trash** | *Marks* the photo for deletion (tap **UNDO** within 5 seconds to take it back). Marked photos are deleted **together at the end**, after Android asks you to confirm. |
-| **✓ Done** (top left) | Stop for now. Anything you haven't reviewed comes back next time. |
+| **✓ Done** (top left) | Stop for now: shows what you've reviewed and what's left. **Done for now** then closes the app. Anything you haven't reviewed comes back next time. |
 
-Everything saves as you go. At the end of a batch you can delete the marked photos, **continue with older photos**, load the previous day or week, or pick photos yourself.
+Everything saves as you go. At the end of a batch you can delete the marked photos, **continue with older photos**, load the previous day or week, pick photos yourself, or tap **Done for now** to close the app.
 
 ### Elsewhere
 
