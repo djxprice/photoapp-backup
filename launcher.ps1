@@ -2,16 +2,19 @@
   PhotoApp PC backup - double-click launcher (started by "Backup photos.cmd").
 
   First run: pick the backup folder (remembered in %APPDATA%\PhotoApp\backup.json)
-  and optionally create a desktop shortcut. Later runs: confirm or change the
-  folder, then run pc/backup.js and keep the window open with the result.
+  and optionally create a desktop shortcut. Later runs: back up (Enter), sync
+  PhotoApp's tags only (S, seconds), or change the folder (C); then run
+  pc/backup.js and keep the window open with the result.
 
-  Automation/testing:  launcher.ps1 -Destination <folder> -Yes
+  Automation/testing:  launcher.ps1 -Destination <folder> -Yes [-TagsOnly]
     -Destination  use (and remember) this folder without the picker
     -Yes          no prompts: start immediately, no shortcut offer, no final pause
+    -TagsOnly     sync tags only instead of a full backup
 #>
 param(
   [string]$Destination,
-  [switch]$Yes
+  [switch]$Yes,
+  [switch]$TagsOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -104,12 +107,18 @@ while (-not (Test-Path -LiteralPath ([IO.Path]::GetPathRoot($dest)))) {
   }
 }
 
+$tags = [bool]$TagsOnly
 if (-not $Yes -and -not $firstRun -and -not $Destination) {
-  Write-Host "Backing up to: $dest"
-  $answer = Read-Host 'Press Enter to start, or type C to choose a different folder'
+  Write-Host "Backup folder: $dest"
+  Write-Host '  Enter = back up photos and tags'
+  Write-Host '  S     = sync tags only (quick: copies tag changes made on the phone)'
+  Write-Host '  C     = choose a different folder'
+  $answer = Read-Host 'Your choice'
   if ($answer -match '^c') {
     $picked = Pick-Folder $dest
     if ($picked) { $dest = $picked }
+  } elseif ($answer -match '^s') {
+    $tags = $true
   }
 }
 
@@ -117,18 +126,19 @@ Save-Config $dest
 if ($firstRun -and -not $Yes) { Offer-Shortcut }
 
 Write-Host ''
-Write-Host "Backing up to: $dest"
+Write-Host $(if ($tags) { "Syncing tags to: $dest" } else { "Backing up to: $dest" })
 Write-Host 'Make sure the phone is plugged in, UNLOCKED, and set to "File transfer".'
 Write-Host ''
 
-& node $backupJs --to $dest
+if ($tags) { & node $backupJs --to $dest --tags-only } else { & node $backupJs --to $dest }
 $code = $LASTEXITCODE
+$what = if ($tags) { 'Tag sync' } else { 'Backup' }
 
 Write-Host ''
 if ($code -eq 0) {
-  Write-Host 'Backup finished.' -ForegroundColor Green
+  Write-Host "$what finished." -ForegroundColor Green
 } else {
-  Write-Host 'Backup finished with problems (see above).' -ForegroundColor Red
+  Write-Host "$what finished with problems (see above)." -ForegroundColor Red
   Write-Host 'If the phone was not found: unlock it, choose "File transfer" in the USB notification, and run this again.'
 }
 Pause-Exit $code

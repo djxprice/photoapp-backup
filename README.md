@@ -8,7 +8,7 @@ This repository holds the **Android app download**, a **how-to guide**, and the 
 
 ## 1. Install the app (Android)
 
-**[⬇ Download the app (preview build, ~94 MB)](https://expo.dev/artifacts/eas/Zdn09_QGUU0m2O3ejn0BXOBQM_1_gsE9IE9zQkiQNto.apk)**, or open the [build page](https://expo.dev/accounts/djxprice/projects/photoapp/builds/a2258d31-8fcd-488f-88ec-8f664ac6b94c) on your phone (or scan its QR code from a PC). *Hosted by Expo; this link expires on 28 Oct 2026, and new builds get a new link here.*
+**[⬇ Download the app (preview build, ~94 MB)](https://expo.dev/artifacts/eas/unt5jx8RTfEAOoyPil1WTISR_lCy4LoOdiu28h3FE2k.apk)**, or open the [build page](https://expo.dev/accounts/djxprice/projects/photoapp/builds/682a8d53-0cc4-4fcc-9b27-a5abb334cd8f) on your phone (or scan its QR code from a PC). *Hosted by Expo; this link expires on 29 Oct 2026, and new builds get a new link here.*
 
 1. Open the downloaded `.apk` on the phone. If asked, allow your browser to **install unknown apps**.
 2. On a **Samsung**, if the install is blocked, turn off *Settings → Security and privacy → Auto Blocker* for the install (turn it back on afterwards).
@@ -54,6 +54,7 @@ Everything saves as you go. At the end of a batch you can delete the marked phot
   - **Photos per session:** 10, 20 or 50.
   - **Revisit memories:** how many photos per visit (any number from 1 to 999); the order (**Oldest to Newest**, **Newest to Oldest** or **Random**); and which photos (**Important**, **Tagged**, which includes Important, or **All**, which includes untagged photos from your photo folders). Changing the order or which photos starts over.
   - **Tag backup:** the folder your tag files go to.
+  - **PC backup:** your last backup, and how many photos' tags you've changed since (run **Sync tags** on the PC to copy them; clearing a photo's tags removes them on the PC too).
   - **Free up space:** only after a PC backup (below). Deletes photos from the phone that the PC backup has verified copies of, keeping the ones you choose (tagged / Utility / Important). Android asks to confirm.
 
 ## 3. PC backup tool (Windows)
@@ -62,7 +63,7 @@ Everything saves as you go. At the end of a batch you can delete the marked phot
 
 > ⚠️ **Node.js is required.** The backup tool runs on Node.js, which most PCs don't have yet. Install it first from **[nodejs.org](https://nodejs.org)**: download the **LTS** version and accept the default options. You only need to do this once. (If it's missing, the backup window says so.)
 
-Backs up **all photos** from your phone to a folder or drive on your PC over USB, filed by month (`YYYY/MM/`), with PhotoApp's tags and notes saved beside each tagged photo (`<photo>.json`). Every copy is verified by content hash, re-runs only copy what's new, and it **never deletes anything from your phone**. It leaves a small receipt on the phone so the app's *Free up space* knows what's safely on the PC.
+Backs up **all photos** from your phone to a folder or drive on your PC over USB, filed by month (`YYYY/MM/`), with PhotoApp's tags and notes saved beside each tagged photo (e.g. `IMG_1234.jpg` + `IMG_1234.jpg.json`). Every copy is verified by content hash, re-runs only copy what's new, and it **never deletes anything from your phone**. It leaves a small receipt on the phone so the app's *Free up space* knows what's safely on the PC.
 
 **Requirements:** Windows 10/11 and [Node.js](https://nodejs.org) (LTS). No other installs.
 
@@ -70,7 +71,7 @@ Backs up **all photos** from your phone to a folder or drive on your PC over USB
 
 1. Unzip the download anywhere (e.g. `Documents\PhotoApp Backup`). If Windows warns that the files came from the internet, right-click the zip → *Properties* → tick *Unblock* before unzipping.
 2. Plug in your phone by USB, **unlock it**, and choose **File transfer** in the USB notification.
-3. Double-click **`Backup photos.cmd`**. The first time, pick your backup folder; it's remembered, and you can add a desktop shortcut. Later runs: press Enter to back up, or C to choose a different folder.
+3. Double-click **`Backup photos.cmd`**. The first time, pick your backup folder; it's remembered, and you can add a desktop shortcut. Later runs: press **Enter** to back up, **S** to sync tags only (a few seconds: copies tag changes made on the phone since the last backup), or **C** to choose a different folder.
 
 The first backup copies everything (a few minutes for a few GB); after that, runs take seconds plus any new photos.
 
@@ -81,10 +82,12 @@ The first backup copies everything (a few minutes for a few GB); after that, run
 node backup.js --to "E:\Photos"              # back up from the phone
 node backup.js --to "E:\Photos" --dry-run    # list what would be copied
 node backup.js --to "E:\Photos" --from <dir> # organise an already-copied folder
+node backup.js --to "E:\Photos" --tags-only  # sync PhotoApp's tags only
 ```
 
 - Reads the phone's `DCIM`, `Pictures` and `Download` folders over the same USB connection File Explorer uses (MTP via `mtp.ps1`); photos only, no videos; no developer mode needed. PhotoApp's tag files are found wherever you keep them inside `DCIM`, `Pictures`, `Download` or `Documents`.
 - Every run first re-checks the PC copies; any that are missing or changed are copied again and never counted as backed up.
+- Tags flow phone → PC: edited tags replace the PC's `<photo>.json`; tags cleared in the app (it leaves a "cleared" tag file) delete it. A tag file that's simply missing never deletes anything. Sync tags (**S**) does only this. The app's Settings → PC backup shows how many photos' tags changed since the last backup or sync.
 - Date comes from PhotoApp's metadata, then EXIF, then the filename, then the phone's file date. Photos with no date go to `undated/`.
 - The same photo is never stored twice (even if renamed); different photos with the same name get a short hash suffix.
 - Bookkeeping lives in `<backup folder>\.photoapp\` (index, pull log, receipts).

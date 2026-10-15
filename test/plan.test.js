@@ -9,6 +9,8 @@ const {
   resolveMonth,
   destinationFor,
   sidecarPathFor,
+  legacySidecarPathFor,
+  parseLeadingJson,
   mostCommonDir,
 } = require('../lib/plan');
 
@@ -62,5 +64,18 @@ test('destination paths and clash suffix', () => {
     path.join('2026', '07', 'IMG_1_abcdef01.jpg')
   );
   assert.strictEqual(destinationFor({ year: null }, 'x.jpg', 'h'), path.join('undated', 'x.jpg'));
-  assert.strictEqual(sidecarPathFor('2026/07/IMG_1.jpg'), '2026/07/IMG_1.json');
+  assert.strictEqual(sidecarPathFor('2026/07/IMG_1.jpg'), '2026/07/IMG_1.jpg.json');
+  assert.strictEqual(sidecarPathFor('2026/07/IMG_1.dng'), '2026/07/IMG_1.dng.json');
+  assert.strictEqual(legacySidecarPathFor('2026/07/IMG_1.jpg'), '2026/07/IMG_1.json');
+});
+
+test('parseLeadingJson reads the current record of a file overwritten without truncation', () => {
+  const now = JSON.stringify({ contentHash: 'a', cleared: true, note: 'brace } and "quote" inside' });
+  const old = JSON.stringify({ contentHash: 'a', caption: 'A much longer older caption', tags: ['x', 'y'], note: '' });
+  const mixed = now + old.slice(now.length);
+  assert.deepStrictEqual(parseLeadingJson(now), { value: JSON.parse(now), trailing: false });
+  assert.deepStrictEqual(parseLeadingJson(mixed), { value: JSON.parse(now), trailing: true });
+  assert.deepStrictEqual(parseLeadingJson(`﻿${now}`).value, JSON.parse(now));
+  assert.strictEqual(parseLeadingJson('not json'), null);
+  assert.strictEqual(parseLeadingJson('{"unterminated": '), null);
 });

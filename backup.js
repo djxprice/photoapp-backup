@@ -6,15 +6,24 @@
     node pc/backup.js --to "E:\Photos"              # pull from the USB-connected phone
     node pc/backup.js --to "E:\Photos" --dry-run    # list what would be backed up
     node pc/backup.js --to "E:\Photos" --from <dir> # organise an already-copied folder
+    node pc/backup.js --to "E:\Photos" --tags-only  # sync PhotoApp's tags only (fast)
 
   - Backs up ALL photos (not videos) from the phone's DCIM, Pictures and
     Download folders; PhotoApp's JSON sidecars ride along for tagged photos.
-  - Layout: <to>/YYYY/MM/<photo> with <photo>.json beside tagged ones.
+  - Layout: <to>/YYYY/MM/<photo> with <photo>.json beside tagged ones
+    (e.g. IMG_1.jpg + IMG_1.jpg.json, so a RAW+JPEG pair keeps both).
   - Photos are identified by MD5 content hash: re-runs skip what's already
     backed up (even if renamed), name clashes get a short hash suffix, and
     every placed file is re-hashed before it counts.
   - Never deletes or changes anything on the phone; only adds a receipt file
-    to the phone's sidecar folder listing what is now safely on the PC.
+    to the phone's sidecar folder listing what is now safely on the PC, and a
+    small "tags synced" marker the app uses to show unsynced tag changes.
+  - Tags flow phone -> PC: an edited tag file replaces the PC copy; a
+    "cleared" tag file (written by the app when all of a photo's tags are
+    removed) deletes the PC copy. A tag file that is simply missing never
+    deletes anything (the photo may have been deleted from the phone).
+  - --tags-only reads just the phone's tag folder (seconds): no photos are
+    copied and no receipt is written.
   - Bookkeeping lives in <to>/.photoapp/ (index, pull log, receipts).
 */
 const fs = require('fs');
@@ -29,6 +38,8 @@ const {
   resolveMonth,
   destinationFor,
   sidecarPathFor,
+  legacySidecarPathFor,
+  parseLeadingJson,
   mostCommonDir,
 } = require('./lib/plan');
 
@@ -53,16 +64,17 @@ function runMtp(args) {
   });
 }
 
-async function pullFromPhone({ staging, pulledFile, resultFile, listOnly }) {
+async function pullFromPhone({ staging, pulledFile, resultFile, listOnly, only }) {
   fs.mkdirSync(staging, { recursive: true });
   const args = ['-Staging', staging, '-Pulled', pulledFile, '-Result', resultFile];
   if (listOnly) args.push('-ListOnly');
+  if (only) args.push('-Only', only);
   await runMtp(args);
   return readMtpResult(resultFile);
 }
 
-// Copy a file (the receipt) into `folder` on the phone: the folder holding
-// PhotoApp's tag files, wherever the user put it.
+// Copy a file (a receipt or tags-synced marker) into `folder` on the phone: the
+// folder holding PhotoApp's tag files, wherever the user put it.
 async function pushToPhone({ file, folder, staging, pulledFile, resultFile }) {
   await runMtp([
     '-Staging', staging, '-Pulled', pulledFile, '-Result', resultFile,
@@ -103,6 +115,7 @@ async function runBackup({
   to,
   from = null,
   dryRun = false,
+  tagsOnly = false,
   log = console.log,
   pull = pullFromPhone,
   push = pushToPhone,
@@ -120,6 +133,19 @@ async function runBackup({
   const pulled = readJson(pulledFile, {}); // phone rel -> "size|modified"
   const stateFile = path.join(meta, 'receipt-state.json');
   const state = readJson(stateFile, { photoCount: -1, sidecarFolder: null });
+  // Tag edits made on the phone after this moment may not be in this run, so
+  // the tags-synced marker carries the start time.
+  const startedAt = now();
+
+  // Tags only needs to know where the phone keeps PhotoApp's tag files, which
+  // a full backup records.
+  if (tagsOnly && !from && !state.sidecarFolder) {
+    const msg =
+      "Don't know where PhotoApp keeps its tag files on the phone yet. Run a full backup " +
+      'once (it finds the folder), then Sync tags works.';
+    log(msg);
+    return { errors: [msg], tagsOnly: true };
+  }
 
   // 0) Re-check the PC side first. An index entry whose file is missing or has
   //    changed size is dropped, and its phone photo (and tag file) un-marked
@@ -140,10 +166,45 @@ async function runBackup({
     for (const k of Object.keys(pulled)) if (k.endsWith(`/${hash}.json`)) delete pulled[k];
   }
   if (missingOnPc.length) {
-    log(`${missingOnPc.length} photo(s) are missing or changed on the PC; they will be copied again.`);
+    log(
+      `${missingOnPc.length} photo(s) are missing or changed on the PC; ` +
+        (tagsOnly ? 'run a full backup to copy them again.' : 'they will be copied again.')
+    );
     if (!dryRun) {
       writeJson(indexFile, index);
       if (!from) writeJson(pulledFile, pulled); // the phone pull reads this
+    }
+  }
+  // 0b) Tag files are named after the full photo file name since 2026-10-15
+  //     (IMG_1.jpg.json): before that, a RAW+JPEG pair shared IMG_1.json and
+  //     one overwrote the other. Rename old files that belong to their photo;
+  //     a tagged photo whose file was lost that way has its tag file copied
+  //     from the phone again (un-marked as pulled).
+  let renamedTags = 0;
+  let refetchTags = 0;
+  if (!dryRun) {
+    for (const [hash, e] of Object.entries(index.photos)) {
+      if (!e.tagged) continue;
+      const target = path.join(to, fromPosix(sidecarPathFor(e.path)));
+      if (fs.existsSync(target)) continue;
+      const legacy = path.join(to, fromPosix(legacySidecarPathFor(e.path)));
+      const rec = fs.existsSync(legacy) ? readJson(legacy, null) : null;
+      if (rec && rec.contentHash === hash) {
+        fs.renameSync(legacy, target);
+        renamedTags += 1;
+        continue;
+      }
+      delete e.tagged;
+      for (const k of Object.keys(pulled)) if (k.endsWith(`/${hash}.json`)) delete pulled[k];
+      refetchTags += 1;
+    }
+    if (renamedTags || refetchTags) {
+      writeJson(indexFile, index);
+      if (!from) writeJson(pulledFile, pulled);
+      log(
+        `Renamed ${renamedTags} tag file(s) to the new <photo file>.json names` +
+          (refetchTags ? `; ${refetchTags} will be copied from the phone again.` : '.')
+      );
     }
   }
   const pathOwner = new Map(Object.entries(index.photos).map(([h, e]) => [e.path, h]));
@@ -159,17 +220,38 @@ async function runBackup({
     log(`Source: ${from} (${listing.length} photos/sidecars)`);
   } else {
     // Plain ASCII: the Windows console mangles typographic characters.
-    log('Reading the phone over USB... (the first run copies everything and can take a while)');
-    const r = await pull({ staging, pulledFile, resultFile, listOnly: dryRun });
+    log(
+      tagsOnly
+        ? `Reading PhotoApp's tag folder (${state.sidecarFolder}) on the phone over USB...`
+        : 'Reading the phone over USB... (the first run copies everything and can take a while)'
+    );
+    const r = await pull({
+      staging,
+      pulledFile,
+      resultFile,
+      listOnly: dryRun,
+      only: tagsOnly ? state.sidecarFolder : null,
+    });
     phoneName = r.phone;
     listing = r.files;
     errors.push(...r.errors);
     sourceDir = staging;
-    log(`Phone: ${phoneName} (${listing.length} photos/sidecars found)`);
+    log(
+      tagsOnly
+        ? `Phone: ${phoneName} (${listing.length} tag files in ${state.sidecarFolder})`
+        : `Phone: ${phoneName} (${listing.length} photos/sidecars found)`
+    );
   }
 
+  if (tagsOnly) listing = listing.filter((f) => f.kind === 'sidecar');
   const images = listing.filter((f) => f.kind === 'image');
   const toProcess = listing.filter((f) => !f.already);
+
+  if (dryRun && tagsOnly) {
+    const changed = toProcess.length;
+    log(`Dry run: ${changed} new/changed tag file(s) on the phone. Nothing changed.`);
+    return { dryRun: true, tagsOnly: true, changedTags: changed, errors };
+  }
 
   if (dryRun) {
     const newImages = toProcess.filter((f) => f.kind === 'image');
@@ -186,6 +268,7 @@ async function runBackup({
     present: 0,
     tagged: 0,
     sidecarsWritten: 0,
+    tagsRemoved: 0,
     orphans: 0,
     redacted: 0,
     ignoredJson: 0,
@@ -202,7 +285,14 @@ async function runBackup({
   //    them once it has photo-location access.
   const sidecars = new Map();
   for (const f of toProcess.filter((x) => x.kind === 'sidecar' && pending(x))) {
-    const rec = readJson(path.join(sourceDir, fromPosix(f.rel)), null);
+    // Tolerates leftover bytes after the record (see parseLeadingJson).
+    let parsed = null;
+    try {
+      parsed = parseLeadingJson(fs.readFileSync(path.join(sourceDir, fromPosix(f.rel)), 'utf8'));
+    } catch {
+      parsed = null;
+    }
+    const rec = parsed && parsed.value;
     processed.add(f.rel);
     if (!rec || rec.hashAlgorithm !== 'md5' || !/^[0-9a-f]{32}$/.test(rec.contentHash || '')) {
       stats.ignoredJson += 1;
@@ -218,7 +308,7 @@ async function runBackup({
     state.sidecarFolder ||
     mostCommonDir(listing.filter((f) => f.kind === 'sidecar').map((f) => f.rel));
 
-  // 2) Photos.
+  // 2) Photos (none in tags-only mode: the listing has tag files only).
   for (const f of toProcess.filter((x) => x.kind === 'image')) {
     const src = path.join(sourceDir, fromPosix(f.rel));
     if (!fs.existsSync(src)) continue; // not staged (copy failed) — retried next run
@@ -267,7 +357,8 @@ async function runBackup({
   //    (their photo may be in a folder not yet backed up) and are retried each run.
   //    A waiting copy is deleted once a newer one for the same photo arrives from
   //    the phone (otherwise it could later overwrite the newer caption), or if
-  //    it can never match (redacted hash).
+  //    it can never match (redacted hash). A "cleared" tag file deletes the PC
+  //    copy of that photo's tags; it never waits for a photo.
   for (const file of fs.existsSync(orphanDir) ? fs.readdirSync(orphanDir) : []) {
     const orphanPath = path.join(orphanDir, file);
     const rec = readJson(orphanPath, null);
@@ -281,7 +372,18 @@ async function runBackup({
   for (const [hash, sc] of sidecars) {
     const photo = index.photos[hash];
     try {
-      if (photo) {
+      if (sc.record.cleared === true) {
+        if (photo) {
+          const target = path.join(to, fromPosix(sidecarPathFor(photo.path)));
+          const legacy = path.join(to, fromPosix(legacySidecarPathFor(photo.path)));
+          const legacyIsOurs = fs.existsSync(legacy) && (readJson(legacy, null) || {}).contentHash === hash;
+          if (fs.existsSync(target) || legacyIsOurs) stats.tagsRemoved += 1;
+          if (fs.existsSync(target)) fs.unlinkSync(target);
+          if (legacyIsOurs) fs.unlinkSync(legacy);
+          delete photo.tagged;
+        }
+        if (sc.orphanFile) fs.unlinkSync(path.join(orphanDir, sc.orphanFile));
+      } else if (photo) {
         const target = path.join(to, fromPosix(sidecarPathFor(photo.path)));
         const body = JSON.stringify({ ...sc.record, photoFile: path.basename(photo.path) }, null, 2);
         const current = fs.existsSync(target) ? fs.readFileSync(target, 'utf8') : null;
@@ -321,7 +423,11 @@ async function runBackup({
   const inventory = Object.entries(index.photos)
     .map(([hash, e]) => ({ hash, from: e.from, size: e.size }))
     .sort((a, b) => a.hash.localeCompare(b.hash));
-  if (inventory.length && (inventory.length !== state.photoCount || stats.copied > 0)) {
+  if (
+    !tagsOnly &&
+    inventory.length &&
+    (inventory.length !== state.photoCount || stats.copied > 0)
+  ) {
     const stamp = now().toISOString().replace(/[:.]/g, '-');
     receiptFile = path.join(meta, 'receipts', `backup-receipt-${stamp}.json`);
     writeJson(receiptFile, {
@@ -358,6 +464,34 @@ async function runBackup({
     }
   }
 
+  // 5b) Tags-synced marker: tells the app every tag change made before
+  //     `startedAt` is now on the PC (Settings shows changes since then). Only
+  //     sent when every tag file on the phone was read this run.
+  let tagsMarkerPushed = false;
+  const tagFolder = sidecarFolder || state.sidecarFolder;
+  const unreadTags = listing.filter(
+    (f) => f.kind === 'sidecar' && !f.already && !processed.has(f.rel)
+  ).length;
+  if (!from && tagFolder && !unreadTags) {
+    const stamp = startedAt.toISOString().replace(/[:.]/g, '-');
+    const markerFile = path.join(meta, 'tag-sync', `tags-synced-${stamp}.json`);
+    writeJson(markerFile, {
+      type: 'photoapp-tag-sync',
+      version: 1,
+      syncedAt: startedAt.toISOString(),
+      destination: to,
+      taggedOnPc: stats.tagged,
+    });
+    try {
+      const r = await push({ file: markerFile, folder: tagFolder, staging, pulledFile, resultFile });
+      tagsMarkerPushed = Boolean(r.pushed);
+      errors.push(...r.errors);
+      if (tagsMarkerPushed) fs.unlinkSync(markerFile);
+    } catch (e) {
+      errors.push(`tags-synced marker not copied to the phone: ${e.message}`);
+    }
+  }
+
   // 6) Clean staging: remove handled sidecar copies and empty folders.
   if (!from) {
     for (const f of listing) {
@@ -369,11 +503,16 @@ async function runBackup({
     pruneEmptyDirs(staging);
   }
 
-  log(
+  const tagSummary =
+    `${stats.sidecarsWritten} tag file(s) updated` +
+    `${stats.tagsRemoved ? `, ${stats.tagsRemoved} removed (tags cleared on the phone)` : ''}` +
+    `${stats.orphans ? `, ${stats.orphans} waiting for their photo` : ''}`;
+  if (tagsOnly) {
+    log(`Tags synced: ${tagSummary}. ${stats.tagged} tagged photo(s) on the PC.`);
+  } else log(
     `Done: ${stats.copied} new photo(s) backed up, ${stats.present} already present` +
       `${images.length - toProcess.filter((x) => x.kind === 'image').length ? `, ${images.length - toProcess.filter((x) => x.kind === 'image').length} unchanged since last backup` : ''}` +
-      `. ${stats.tagged} tagged photo(s) on the PC; ${stats.sidecarsWritten} metadata file(s) written` +
-      `${stats.orphans ? `, ${stats.orphans} waiting for their photo` : ''}.`
+      `. ${stats.tagged} tagged photo(s) on the PC; ${tagSummary}.`
   );
   if (stats.redacted) {
     log(
@@ -398,6 +537,8 @@ async function runBackup({
     errors,
     receiptFile,
     receiptPushed,
+    tagsMarkerPushed,
+    tagsOnly,
     sidecarFolder,
     missingOnPc: missingOnPc.length,
   };
@@ -419,6 +560,7 @@ function parseArgs(argv) {
     if (a === '--to') out.to = argv[++i];
     else if (a === '--from') out.from = argv[++i];
     else if (a === '--dry-run') out.dryRun = true;
+    else if (a === '--tags-only') out.tagsOnly = true;
     else if (a === '-h' || a === '--help') out.help = true;
     else throw new Error(`Unknown argument: ${a}`);
   }
@@ -434,13 +576,18 @@ if (require.main === module) {
     process.exit(2);
   }
   if (args.help || !args.to) {
-    console.log('Usage: node pc/backup.js --to <folder> [--dry-run] [--from <copied folder>]');
+    console.log('Usage: node pc/backup.js --to <folder> [--tags-only] [--dry-run] [--from <copied folder>]');
     process.exit(args.help ? 0 : 2);
   }
-  runBackup({ to: path.resolve(args.to), from: args.from && path.resolve(args.from), dryRun: args.dryRun })
+  runBackup({
+    to: path.resolve(args.to),
+    from: args.from && path.resolve(args.from),
+    dryRun: args.dryRun,
+    tagsOnly: Boolean(args.tagsOnly),
+  })
     .then((r) => process.exit(r.errors && r.errors.length ? 1 : 0))
     .catch((e) => {
-      console.error(`Backup failed: ${e.message}`);
+      console.error(`${args.tagsOnly ? 'Tag sync' : 'Backup'} failed: ${e.message}`);
       process.exit(1);
     });
 }

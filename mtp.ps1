@@ -4,7 +4,9 @@
   Node cannot talk to MTP devices; this helper does only the device I/O:
     - list photo files and PhotoApp tag files (sidecars) on the phone,
     - copy NEW or CHANGED ones into a local staging folder,
-    - or (push mode) copy one file - a backup receipt - into a phone folder.
+    - or (push mode) copy one file - a backup receipt or tags-synced marker -
+      into a phone folder.
+  -Only <phone folder> lists/pulls just that folder's tag files (Sync tags).
   It never deletes or modifies anything on the phone.
 
   Usage:
@@ -22,7 +24,8 @@ param(
   [Parameter(Mandatory = $true)][string]$Result,
   [switch]$ListOnly,
   [string]$PushFile,
-  [string]$PushFolder
+  [string]$PushFolder,
+  [string]$Only
 )
 
 $ErrorActionPreference = 'Stop'
@@ -179,9 +182,16 @@ function Visit($folder, $rel, $images) {
   }
 }
 
-foreach ($root in $Roots) {
-  $f = Get-Child $phone.Root $root.Name
-  if ($f) { Visit $f.GetFolder $root.Name $root.Images }
+if ($Only) {
+  # Sync tags: just PhotoApp's tag folder, tag files only.
+  $tagFolder = Get-FolderByPath $phone.Root $Only
+  if (-not $tagFolder) { throw "PhotoApp's tag folder '$Only' was not found on the phone. Run a full backup." }
+  Visit $tagFolder $Only $false
+} else {
+  foreach ($root in $Roots) {
+    $f = Get-Child $phone.Root $root.Name
+    if ($f) { Visit $f.GetFolder $root.Name $root.Images }
+  }
 }
 
 Write-Utf8Json $Result ([ordered]@{

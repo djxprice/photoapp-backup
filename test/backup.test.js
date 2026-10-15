@@ -53,7 +53,7 @@ test('organises by month, attaches sidecars, writes index + receipt, leaves sour
   assert.deepStrictEqual(r.errors, []);
   assert.ok(fs.existsSync(path.join(dest, '2026', '07', '20260720_154654.jpg')));
   assert.ok(fs.existsSync(path.join(dest, '2025', '01', '20250105_080000.jpg')));
-  const meta = JSON.parse(fs.readFileSync(path.join(dest, '2026', '07', '20260720_154654.json'), 'utf8'));
+  const meta = JSON.parse(fs.readFileSync(path.join(dest, '2026', '07', '20260720_154654.jpg.json'), 'utf8'));
   assert.strictEqual(meta.caption, 'Sourdough starter');
   assert.strictEqual(meta.photoFile, '20260720_154654.jpg');
   assert.ok(!fs.existsSync(path.join(dest, '2026', '07', 'clip.mp4')));
@@ -122,7 +122,7 @@ test('a sidecar whose photo arrives later is attached on a later run', async () 
   put(s2, 'Pictures/Messages/20260720_120000.jpg', bytes);
   const r2 = await runBackup({ to: dest, from: s2, log: quiet });
   assert.strictEqual(r2.copied, 1);
-  assert.ok(fs.existsSync(path.join(dest, '2026', '07', '20260720_120000.json')));
+  assert.ok(fs.existsSync(path.join(dest, '2026', '07', '20260720_120000.jpg.json')));
   assert.deepStrictEqual(fs.readdirSync(path.join(dest, '.photoapp', 'orphan-sidecars')), []);
 });
 
@@ -146,9 +146,9 @@ test('phone mode: only handled files are marked pulled; staged photos are moved'
       ],
     };
   };
-  let pushed = null;
+  const pushes = [];
   const push = async ({ file, folder }) => {
-    pushed = { file, folder };
+    pushes.push({ name: path.basename(file), folder });
     return { pushed: true, errors: [] };
   };
 
@@ -156,7 +156,10 @@ test('phone mode: only handled files are marked pulled; staged photos are moved'
 
   assert.strictEqual(r.copied, 1);
   assert.ok(r.receiptPushed);
-  assert.deepStrictEqual(pushed, { file: r.receiptFile, folder: 'DCIM/PhotoTags' });
+  assert.ok(r.tagsMarkerPushed);
+  assert.deepStrictEqual(pushes.map((x) => x.folder), ['DCIM/PhotoTags', 'DCIM/PhotoTags']);
+  assert.strictEqual(pushes[0].name, path.basename(r.receiptFile));
+  assert.match(pushes[1].name, /^tags-synced-.*\.json$/);
   const pulled = JSON.parse(fs.readFileSync(path.join(dest, '.photoapp', 'pulled.json'), 'utf8'));
   assert.deepStrictEqual(Object.keys(pulled).sort(), ['DCIM/Camera/20260720_154654.jpg', sidecarRel].sort());
   assert.ok(!fs.existsSync(staging), 'staging emptied and removed');
@@ -234,7 +237,7 @@ test('a newer tag file replaces an older one still waiting for its photo', async
   put(s2, `DCIM/PhotoTags/${h}.json`, sidecar(h, { caption: 'B' }));
   put(s2, 'DCIM/Camera/20260720_120000.jpg', bytes);
   await runBackup({ to: dest, from: s2, log: quiet });
-  const metaFile = path.join(dest, '2026', '07', '20260720_120000.json');
+  const metaFile = path.join(dest, '2026', '07', '20260720_120000.jpg.json');
   assert.strictEqual(JSON.parse(fs.readFileSync(metaFile, 'utf8')).caption, 'B');
   assert.deepStrictEqual(fs.readdirSync(path.join(dest, '.photoapp', 'orphan-sidecars')), []);
 
@@ -265,4 +268,242 @@ test('dry run copies nothing', async () => {
   const r = await runBackup({ to: dest, from: src, dryRun: true, log: quiet });
   assert.strictEqual(r.newPhotos, 1);
   assert.ok(!fs.existsSync(path.join(dest, '2026')));
+});
+
+// A full phone-mode backup of one tagged photo (tag folder DCIM/PhotoTags), so
+// later runs know the tag folder. Returns the paths involved.
+async function backedUpTaggedPhoto(dest, caption = 'A') {
+  const staging = path.join(dest, '.photoapp', 'staging');
+  const bytes = Buffer.from(`tagged-photo-${caption}`);
+  const hash = md5(bytes);
+  const tagRel = `DCIM/PhotoTags/${hash}.json`;
+  const pull = async () => {
+    put(staging, 'DCIM/Camera/20260720_154654.jpg', bytes);
+    put(staging, tagRel, sidecar(hash, { caption }));
+    return {
+      phone: 'Test Phone',
+      errors: [],
+      files: [
+        { rel: 'DCIM/Camera/20260720_154654.jpg', size: bytes.length, modified: '', sig: 'a', kind: 'image', already: false, staged: true },
+        { rel: tagRel, size: 10, modified: '', sig: 't1', kind: 'sidecar', already: false, staged: true },
+      ],
+    };
+  };
+  const push = async () => ({ pushed: true, errors: [] });
+  await runBackup({ to: dest, pull, push, log: quiet });
+  return { staging, hash, tagRel, metaFile: path.join(dest, '2026', '07', '20260720_154654.jpg.json') };
+}
+
+test('a "cleared" tag file deletes the PC copy of the tags; a missing one deletes nothing', async () => {
+  const s1 = tmp('s1');
+  const s2 = tmp('s2');
+  const dest = tmp('dest');
+  const a = Buffer.from('photo-a');
+  const b = Buffer.from('photo-b');
+  put(s1, 'DCIM/Camera/20260720_120000.jpg', a);
+  put(s1, 'DCIM/Camera/20260721_120000.jpg', b);
+  put(s1, `DCIM/PhotoTags/${md5(a)}.json`, sidecar(md5(a), { caption: 'A' }));
+  put(s1, `DCIM/PhotoTags/${md5(b)}.json`, sidecar(md5(b), { caption: 'B' }));
+  await runBackup({ to: dest, from: s1, log: quiet });
+  const metaA = path.join(dest, '2026', '07', '20260720_120000.jpg.json');
+  const metaB = path.join(dest, '2026', '07', '20260721_120000.jpg.json');
+  assert.ok(fs.existsSync(metaA) && fs.existsSync(metaB));
+
+  // A's tags were cleared on the phone (cleared tag file); B's tag file is
+  // simply absent from this listing (e.g. the photo was deleted on the phone).
+  put(s2, `DCIM/PhotoTags/${md5(a)}.json`, JSON.stringify({
+    version: 2, hashAlgorithm: 'md5', hashSource: 'original', contentHash: md5(a),
+    fileName: '20260720_120000.jpg', cleared: true, updatedAt: '2026-10-15T09:00:00.000Z',
+  }));
+  const r = await runBackup({ to: dest, from: s2, log: quiet });
+
+  assert.strictEqual(r.tagsRemoved, 1);
+  assert.ok(!fs.existsSync(metaA), "A's PC tag file is deleted");
+  assert.ok(fs.existsSync(metaB), "B's PC tag file is kept");
+  assert.strictEqual(r.tagged, 1);
+  assert.ok(fs.existsSync(path.join(dest, '2026', '07', '20260720_120000.jpg')), 'the photo itself stays');
+});
+
+test('a "cleared" tag file for a photo not on the PC creates nothing and drops a waiting copy', async () => {
+  const s1 = tmp('s1');
+  const s2 = tmp('s2');
+  const dest = tmp('dest');
+  const h = md5(Buffer.from('not-backed-up-yet'));
+  put(s1, `DCIM/PhotoTags/${h}.json`, sidecar(h, { caption: 'waiting' }));
+  await runBackup({ to: dest, from: s1, log: quiet });
+  const orphans = path.join(dest, '.photoapp', 'orphan-sidecars');
+  assert.deepStrictEqual(fs.readdirSync(orphans), [`${h}.json`]);
+
+  put(s2, `DCIM/PhotoTags/${h}.json`, JSON.stringify({
+    version: 2, hashAlgorithm: 'md5', contentHash: h, cleared: true, updatedAt: '2026-10-15T09:00:00.000Z',
+  }));
+  const r = await runBackup({ to: dest, from: s2, log: quiet });
+  assert.strictEqual(r.orphans, 0);
+  assert.deepStrictEqual(fs.readdirSync(orphans), []);
+});
+
+test('tags only: reads just the tag folder, updates tags, copies no photos, writes no receipt, sends the marker', async () => {
+  const dest = tmp('dest');
+  const { staging, hash, tagRel, metaFile } = await backedUpTaggedPhoto(dest, 'A');
+  const receiptsBefore = fs.readdirSync(path.join(dest, '.photoapp', 'receipts')).length;
+
+  let pullArgs = null;
+  const pull = async (args) => {
+    pullArgs = args;
+    put(staging, tagRel, sidecar(hash, { caption: 'B (edited on the phone)' }));
+    return {
+      phone: 'Test Phone',
+      errors: [],
+      files: [{ rel: tagRel, size: 12, modified: '', sig: 't2', kind: 'sidecar', already: false, staged: true }],
+    };
+  };
+  const pushes = [];
+  const push = async ({ file, folder }) => {
+    pushes.push({ name: path.basename(file), folder, body: JSON.parse(fs.readFileSync(file, 'utf8')) });
+    return { pushed: true, errors: [] };
+  };
+  const logs = [];
+  const r = await runBackup({
+    to: dest, tagsOnly: true, pull, push, log: (m) => logs.push(m),
+    now: () => new Date('2026-10-15T09:30:00.000Z'),
+  });
+
+  assert.strictEqual(pullArgs.only, 'DCIM/PhotoTags');
+  assert.deepStrictEqual(r.errors, []);
+  assert.strictEqual(r.copied, 0);
+  assert.strictEqual(r.receiptFile, null);
+  assert.strictEqual(fs.readdirSync(path.join(dest, '.photoapp', 'receipts')).length, receiptsBefore);
+  assert.strictEqual(JSON.parse(fs.readFileSync(metaFile, 'utf8')).caption, 'B (edited on the phone)');
+  assert.strictEqual(pushes.length, 1);
+  assert.strictEqual(pushes[0].folder, 'DCIM/PhotoTags');
+  assert.match(pushes[0].name, /^tags-synced-2026-10-15T09-30-00-000Z\.json$/);
+  assert.strictEqual(pushes[0].body.type, 'photoapp-tag-sync');
+  assert.strictEqual(pushes[0].body.syncedAt, '2026-10-15T09:30:00.000Z');
+  assert.ok(logs.some((m) => /^Tags synced: 1 tag file\(s\) updated/.test(m)));
+  assert.ok(!fs.existsSync(path.join(dest, '.photoapp', 'tag-sync', pushes[0].name)), 'local marker removed once delivered');
+});
+
+test('tags only before any full backup: explains, changes nothing', async () => {
+  const dest = tmp('dest');
+  let pulled = false;
+  const pull = async () => {
+    pulled = true;
+    return { phone: 'Test Phone', errors: [], files: [] };
+  };
+  const r = await runBackup({ to: dest, tagsOnly: true, pull, push: async () => ({ pushed: true, errors: [] }), log: quiet });
+  assert.strictEqual(pulled, false);
+  assert.strictEqual(r.errors.length, 1);
+  assert.match(r.errors[0], /Run a full backup once/);
+});
+
+test('no tags-synced marker when a tag file could not be read from the phone', async () => {
+  const dest = tmp('dest');
+  const { tagRel } = await backedUpTaggedPhoto(dest, 'A');
+  const pull = async () => ({
+    phone: 'Test Phone',
+    errors: ['timed out copying a tag file (will retry next run)'],
+    files: [{ rel: tagRel, size: 12, modified: '', sig: 't3', kind: 'sidecar', already: false, staged: false }],
+  });
+  const pushes = [];
+  const push = async ({ file }) => {
+    pushes.push(path.basename(file));
+    return { pushed: true, errors: [] };
+  };
+  const r = await runBackup({ to: dest, tagsOnly: true, pull, push, log: quiet });
+  assert.strictEqual(r.tagsMarkerPushed, false);
+  assert.deepStrictEqual(pushes, []);
+});
+
+test('a RAW+JPEG pair with the same name keeps a tag file each', async () => {
+  const src = tmp('src');
+  const dest = tmp('dest');
+  const jpg = Buffer.from('jpeg-bytes');
+  const dng = Buffer.from('raw-bytes');
+  put(src, 'DCIM/Camera/20260910_195825.jpg', jpg);
+  put(src, 'DCIM/Camera/20260910_195825.dng', dng);
+  put(src, `DCIM/PhotoTags/${md5(jpg)}.json`, sidecar(md5(jpg), { caption: 'jpeg', creationTime: new Date(2026, 8, 10, 19).toISOString() }));
+  put(src, `DCIM/PhotoTags/${md5(dng)}.json`, sidecar(md5(dng), { caption: 'raw', creationTime: new Date(2026, 8, 10, 19).toISOString() }));
+
+  const r = await runBackup({ to: dest, from: src, log: quiet });
+
+  assert.strictEqual(r.tagged, 2);
+  const dir = path.join(dest, '2026', '09');
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(dir, '20260910_195825.jpg.json'), 'utf8')).caption, 'jpeg');
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(dir, '20260910_195825.dng.json'), 'utf8')).caption, 'raw');
+});
+
+test('old <name>.json tag files are renamed; one lost to a RAW+JPEG clash is copied from the phone again', async () => {
+  const dest = tmp('dest');
+  const staging = path.join(dest, '.photoapp', 'staging');
+  const jpg = Buffer.from('pair-jpeg');
+  const dng = Buffer.from('pair-raw');
+  const hj = md5(jpg);
+  const hd = md5(dng);
+  const tagJ = `DCIM/PhotoTags/${hj}.json`;
+  const tagD = `DCIM/PhotoTags/${hd}.json`;
+  // An older backup: both photos tagged, but only one old-style shared file
+  // (the RAW's tags overwrote the JPEG's).
+  put(dest, '2026/09/20260910_195825.jpg', jpg);
+  put(dest, '2026/09/20260910_195825.dng', dng);
+  put(dest, '2026/09/20260910_195825.json', sidecar(hd, { caption: 'raw' }));
+  put(dest, '.photoapp/index.json', JSON.stringify({
+    version: 1,
+    photos: {
+      [hj]: { path: '2026/09/20260910_195825.jpg', size: jpg.length, from: 'DCIM/Camera/20260910_195825.jpg', tagged: true },
+      [hd]: { path: '2026/09/20260910_195825.dng', size: dng.length, from: 'DCIM/Camera/20260910_195825.dng', tagged: true },
+    },
+  }));
+  put(dest, '.photoapp/pulled.json', JSON.stringify({ [tagJ]: 'old', [tagD]: 'old' }));
+  put(dest, '.photoapp/receipt-state.json', JSON.stringify({ photoCount: 2, sidecarFolder: 'DCIM/PhotoTags' }));
+
+  // Tags-only run: the phone still has both tag files; only the JPEG's is re-copied.
+  let pulledSeen = null;
+  const pull = async () => {
+    pulledSeen = JSON.parse(fs.readFileSync(path.join(dest, '.photoapp', 'pulled.json'), 'utf8'));
+    put(staging, tagJ, sidecar(hj, { caption: 'jpeg' }));
+    return {
+      phone: 'Test Phone',
+      errors: [],
+      files: [
+        { rel: tagJ, size: 9, modified: '', sig: 'new', kind: 'sidecar', already: false, staged: true },
+        { rel: tagD, size: 9, modified: '', sig: 'old', kind: 'sidecar', already: true, staged: false },
+      ],
+    };
+  };
+  const logs = [];
+  const r = await runBackup({ to: dest, tagsOnly: true, pull, push: async () => ({ pushed: true, errors: [] }), log: (m) => logs.push(m) });
+
+  assert.deepStrictEqual(r.errors, []);
+  assert.ok(!(tagJ in pulledSeen), "the JPEG's tag file is re-copied");
+  assert.ok(tagD in pulledSeen, "the RAW's tag file isn't needed again");
+  const dir = path.join(dest, '2026', '09');
+  assert.ok(!fs.existsSync(path.join(dir, '20260910_195825.json')), 'old shared file renamed away');
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(dir, '20260910_195825.dng.json'), 'utf8')).caption, 'raw');
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(dir, '20260910_195825.jpg.json'), 'utf8')).caption, 'jpeg');
+  assert.strictEqual(r.tagged, 2);
+  assert.ok(logs.some((m) => /Renamed 1 tag file\(s\).*1 will be copied from the phone again/.test(m)));
+});
+
+test('a phone tag file with leftover bytes after the record is read correctly', async () => {
+  const s1 = tmp('s1');
+  const s2 = tmp('s2');
+  const dest = tmp('dest');
+  const bytes = Buffer.from('photo-overwritten-tag');
+  const h = md5(bytes);
+  put(s1, 'DCIM/Camera/20260720_120000.jpg', bytes);
+  const longer = sidecar(h, { caption: 'A long caption that was later cleared on the phone' });
+  put(s1, `DCIM/PhotoTags/${h}.json`, longer);
+  await runBackup({ to: dest, from: s1, log: quiet });
+  const metaFile = path.join(dest, '2026', '07', '20260720_120000.jpg.json');
+  assert.ok(fs.existsSync(metaFile));
+
+  // The app cleared the tags; Android wrote the shorter cleared record over
+  // the start of the old file without truncating it.
+  const cleared = JSON.stringify({ version: 2, hashAlgorithm: 'md5', contentHash: h, cleared: true, updatedAt: '2026-10-15T14:01:23.670Z' });
+  put(s2, `DCIM/PhotoTags/${h}.json`, cleared + longer.slice(cleared.length));
+  const r = await runBackup({ to: dest, from: s2, log: quiet });
+
+  assert.strictEqual(r.ignoredJson, 0);
+  assert.strictEqual(r.tagsRemoved, 1);
+  assert.ok(!fs.existsSync(metaFile));
 });

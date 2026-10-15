@@ -5,7 +5,7 @@ The **canonical definition** of PhotoApp's per-photo metadata file. Code that wr
 ## Where the files live
 
 - **On the phone:** one file per photo, named `<contentHash>.json`, all in the single folder the user granted (e.g. `DCIM/photoAppMetadada`). Not next to the photo: Android's folder access (SAF) only grants one folder.
-- **On the PC backup:** copied beside the photo as `<photo name>.json` (e.g. `2026/07/20260729_152730.json`), plus `"photoFile": "<photo name>"`.
+- **On the PC backup:** copied beside the photo as `<photo file name>.json` (e.g. `2026/07/20260729_152730.jpg.json`, the Google Takeout convention), plus `"photoFile": "<photo file name>"`. A RAW+JPEG pair (`IMG.jpg` + `IMG.dng`) gets one file each. Before 2026-10-15 the name dropped the photo's extension (`20260729_152730.json`), so such a pair overwrote each other's tags; the backup tool renames old files on its next run.
 - The phone's SQLite database is the source of truth while the app is installed. These files are the durable, portable copy that outlives the app or the phone.
 
 ## When a file exists
@@ -15,7 +15,16 @@ A photo has a metadata file when the user expressed something about it (`needsSi
 - it has a **caption, tags or a note**, or
 - it is marked **Important** or **Utility** (even with no text).
 
-Photos that were only skipped, or only left at Normal, have no file. Clearing everything from a photo deletes its file, as does deleting the photo from the device via the end-of-queue batch delete. Free up space keeps the file (the photo is on the PC).
+Photos that were only skipped, or only left at Normal, have no file. Deleting the photo from the device via the end-of-queue batch delete deletes its file. Free up space keeps the file (the photo is on the PC).
+
+**Clearing everything from a photo** replaces its file with a **cleared record** (since 2026-10-15), so the PC's *Sync tags* removes its copy of the tags too:
+
+```json
+{ "version": 2, "hashAlgorithm": "md5", "hashSource": "original", "contentHash": "<md5>",
+  "fileName": "20260729_152730.jpg", "cleared": true, "updatedAt": "2026-10-15T09:00:00.000Z" }
+```
+
+A cleared record has no caption, tags, note or significance. Tagging the photo again overwrites it with a normal record. Readers must **only** remove tags on an explicit `"cleared": true`. A missing file never means "cleared": the photo may have been deleted, or a listing may be incomplete.
 
 ## Fields
 
@@ -65,9 +74,12 @@ Photos that were only skipped, or only left at Normal, have no file. Clearing ev
 
 - Identify photos **only** by `contentHash` (after checking `hashAlgorithm`). Treat `hashSource: "redacted"` hashes as unmatched.
 - Unknown extra fields: ignore. Missing fields: use the defaults (`timelineDate` null, `skipped` false, `visibility` "private", stamps null).
+- `"cleared": true` means the user removed all of this photo's tags: delete your copy of them; it carries no metadata of its own.
 - Never write metadata into the image file itself.
+- **Phone copies may have leftover bytes after the record.** Android's folder access doesn't truncate a file it overwrites, so before 2026-10-15 a shorter rewrite (e.g. a cleared record) kept the old file's tail. Read the **first complete JSON object** and ignore anything after it, as `parseLeadingJson` in `pc/lib/plan.js` does. The app now replaces files instead of overwriting them.
 
 ## History
 
+- **Cleared records (2026-10-15):** clearing a photo's tags writes `{ ..., "cleared": true, "updatedAt" }` instead of deleting the file (schema still v2; older readers that ignore the field see an empty record).
 - **v2 (2026-10-13):** added `hashSource`, `relativePath`, `timelineDate`, `skipped`, `visibility`, `createdAt`. Files are written for Important/Utility marks even without text. On upgrade the app rewrites every existing file once (tracked as `sidecarSchema` in AsyncStorage).
 - **v1 (2026-08-03):** `version`, `hashAlgorithm`, `contentHash`, `fileName`, `fileSize`, `creationTime`, `caption`, `tags`, `note`, `significance`; `updatedAt` added late in v1.
