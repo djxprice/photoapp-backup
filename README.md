@@ -8,7 +8,7 @@ This repository holds the **Android app download**, a **how-to guide**, and the 
 
 ## 1. Install the app (Android)
 
-**[⬇ Download the app (preview build, ~94 MB)](https://expo.dev/artifacts/eas/jODD5SiQSXXt4cDZ7B20xc4nT5MAfA6Rf1xR1dg0UxU.apk)**, or open the [build page](https://expo.dev/accounts/djxprice/projects/photoapp/builds/bb7fffbb-e5a4-44b1-889a-abd043429f4a) on your phone (or scan its QR code from a PC). *Hosted by Expo; this link expires on 29 Oct 2026, and new builds get a new link here.*
+**[⬇ Download the app (preview build, ~94 MB)](https://expo.dev/artifacts/eas/ylV0rJS0AvD3XzRiGnaiocY75F-wBYgaF-unPgJ8hwE.apk)**, or open the [build page](https://expo.dev/accounts/djxprice/projects/photoapp/builds/709eaf05-eb54-4387-98e0-0ec5f5b14fa5) on your phone (or scan its QR code from a PC). *Hosted by Expo; this link expires on 29 Oct 2026, and new builds get a new link here.*
 
 1. Open the downloaded `.apk` on the phone. If asked, allow your browser to **install unknown apps**.
 2. On a **Samsung**, if the install is blocked, turn off *Settings → Security and privacy → Auto Blocker* for the install (turn it back on afterwards).
@@ -37,7 +37,7 @@ Then:
 |---|---|
 | **→** (green, bottom right) | Saves and moves to the next photo. Swiping left/right on the photo also works. |
 | **←** (blue) | Saves and goes back to the previous photo. |
-| **Skip** (yellow) | Marks the photo as reviewed with nothing to add. It won't come back for review; to tag it later, find it in **Choose photos** (it shows a ✓). |
+| **Skip** (yellow) | Marks the photo as reviewed with nothing to add and takes it out of this batch (tap **UNDO** within 5 seconds to bring it back). It won't come back for review; to tag it later, find it in **Choose photos** (it shows a ✓). |
 | 🗑 **Trash** | *Marks* the photo for deletion (tap **UNDO** within 5 seconds to take it back). Marked photos are deleted **together at the end**, after Android asks you to confirm. |
 | **✓ Done** (top left) | Stop for now: shows what you've reviewed and what's left. **Done for now** then closes the app. Anything you haven't reviewed comes back next time. |
 
