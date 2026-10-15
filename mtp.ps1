@@ -185,7 +185,7 @@ function Visit($folder, $rel, $images) {
 if ($Only) {
   # Sync tags: just PhotoApp's tag folder, tag files only.
   $tagFolder = Get-FolderByPath $phone.Root $Only
-  if (-not $tagFolder) { throw "PhotoApp's tag folder '$Only' was not found on the phone. Run a full backup." }
+  if (-not $tagFolder) { throw "PicJot's tag folder '$Only' was not found on the phone. Run a full backup." }
   Visit $tagFolder $Only $false
 } else {
   foreach ($root in $Roots) {

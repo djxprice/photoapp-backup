@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /*
-  PhotoApp PC backup (v1).
+  PicJot PC backup (v1). (The app was called PhotoApp; internal names keep it.)
 
     node pc/backup.js --to "E:\Photos"              # pull from the USB-connected phone
     node pc/backup.js --to "E:\Photos" --dry-run    # list what would be backed up
@@ -141,7 +141,7 @@ async function runBackup({
   // a full backup records.
   if (tagsOnly && !from && !state.sidecarFolder) {
     const msg =
-      "Don't know where PhotoApp keeps its tag files on the phone yet. Run a full backup " +
+      "Don't know where PicJot keeps its tag files on the phone yet. Run a full backup " +
       'once (it finds the folder), then Sync tags works.';
     log(msg);
     return { errors: [msg], tagsOnly: true };
@@ -222,7 +222,7 @@ async function runBackup({
     // Plain ASCII: the Windows console mangles typographic characters.
     log(
       tagsOnly
-        ? `Reading PhotoApp's tag folder (${state.sidecarFolder}) on the phone over USB...`
+        ? `Reading PicJot's tag folder (${state.sidecarFolder}) on the phone over USB...`
         : 'Reading the phone over USB... (the first run copies everything and can take a while)'
     );
     const r = await pull({
@@ -445,7 +445,7 @@ async function runBackup({
       // No tag files on the phone yet, so there's no PhotoApp folder to put the
       // receipt in. Not an error; retried next run.
       receiptNote =
-        'No PhotoApp tag folder found on the phone yet, so the receipt was not copied to it ' +
+        'No PicJot tag folder found on the phone yet, so the receipt was not copied to it ' +
         '(Free up space needs it). In the app, choose a backup folder under Settings > Tag backup ' +
         'and tag a photo, then run the backup again.';
     } else {
@@ -516,8 +516,8 @@ async function runBackup({
   );
   if (stats.redacted) {
     log(
-      `${stats.redacted} tag file(s) on the phone were saved before PhotoApp had photo-location ` +
-        'access, so they cannot be matched to their photos yet. Open PhotoApp on the phone ' +
+      `${stats.redacted} tag file(s) on the phone were saved before PicJot had photo-location ` +
+        'access, so they cannot be matched to their photos yet. Open PicJot on the phone ' +
         '(it refreshes them automatically), then run the backup again.'
     );
   }

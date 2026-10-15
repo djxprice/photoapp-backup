@@ -1,5 +1,5 @@
 <#
-  PhotoApp PC backup - double-click launcher (started by "Backup photos.cmd").
+  PicJot PC backup - double-click launcher (started by "Backup photos.cmd").
 
   First run: pick the backup folder (remembered in %APPDATA%\PhotoApp\backup.json)
   and optionally create a desktop shortcut. Later runs: back up (Enter), sync
@@ -18,7 +18,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-try { $Host.UI.RawUI.WindowTitle = 'PhotoApp backup' } catch {}
+try { $Host.UI.RawUI.WindowTitle = 'PicJot backup' } catch {}
 
 $configDir = Join-Path $env:APPDATA 'PhotoApp'
 $configFile = Join-Path $configDir 'backup.json'
@@ -50,7 +50,7 @@ function Save-Config([string]$dest) {
 function Pick-Folder([string]$start) {
   Add-Type -AssemblyName System.Windows.Forms
   $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
-  $dlg.Description = 'Choose where PhotoApp should back up your photos (a folder on this PC or an attached drive)'
+  $dlg.Description = 'Choose where PicJot should back up your photos (a folder on this PC or an attached drive)'
   $dlg.ShowNewFolderButton = $true
   if ($start -and (Test-Path -LiteralPath $start)) { $dlg.SelectedPath = $start }
   if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { return $dlg.SelectedPath }
@@ -68,13 +68,13 @@ function Offer-Shortcut {
   $s.TargetPath = $cmdFile
   $s.WorkingDirectory = $PSScriptRoot
   $s.IconLocation = "$env:SystemRoot\System32\imageres.dll,108"
-  $s.Description = 'Back up phone photos with PhotoApp'
+  $s.Description = 'Back up phone photos with PicJot'
   $s.Save()
   Write-Host "Shortcut created: $lnk"
 }
 
 Write-Host ''
-Write-Host '  PhotoApp backup' -ForegroundColor Yellow
+Write-Host '  PicJot backup' -ForegroundColor Yellow
 Write-Host '  ---------------'
 Write-Host ''
 

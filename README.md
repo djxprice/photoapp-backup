@@ -1,6 +1,6 @@
-# PhotoApp: app download, guide and PC backup tool
+# PicJot: app download, guide and PC backup tool
 
-**PhotoApp** is a local-first Android app for capturing the story behind your photos: a quick daily review of new photos with a caption, tags, a note and a significance (Utility / Normal / Important), plus "Revisit memories" to resurface them. No cloud: your photos and tags stay on your phone and your own PC.
+**PicJot** (formerly PhotoApp) is a local-first Android app for capturing the story behind your photos: a quick daily review of new photos with a caption, tags, a note and a significance (Utility / Normal / Important), plus "Revisit memories" to resurface them. No cloud: your photos and tags stay on your phone and your own PC.
 
 This repository holds the **Android app download**, a **how-to guide**, and the **PC backup tool** (Windows; ⚠️ **requires [Node.js](https://nodejs.org)**, see [section 3](#3-pc-backup-tool-windows)).
 
@@ -8,7 +8,7 @@ This repository holds the **Android app download**, a **how-to guide**, and the 
 
 ## 1. Install the app (Android)
 
-**[⬇ Download the app (preview build, ~94 MB)](https://expo.dev/artifacts/eas/ylV0rJS0AvD3XzRiGnaiocY75F-wBYgaF-unPgJ8hwE.apk)**, or open the [build page](https://expo.dev/accounts/djxprice/projects/photoapp/builds/709eaf05-eb54-4387-98e0-0ec5f5b14fa5) on your phone (or scan its QR code from a PC). *Hosted by Expo; this link expires on 29 Oct 2026, and new builds get a new link here.*
+**[⬇ Download the app (preview build, ~94 MB)](https://expo.dev/artifacts/eas/uGILPIhlXD9Hg6Xf-UP5_rbWXj5QZq6fRVXkKFW3B5k.apk)**, or open the [build page](https://expo.dev/accounts/djxprice/projects/photoapp/builds/8550cb08-0a6f-49de-8e07-86e13e6139c2) on your phone (or scan its QR code from a PC). *Hosted by Expo; this link expires on 29 Oct 2026, and new builds get a new link here.*
 
 1. Open the downloaded `.apk` on the phone. If asked, allow your browser to **install unknown apps**.
 2. On a **Samsung**, if the install is blocked, turn off *Settings → Security and privacy → Auto Blocker* for the install (turn it back on afterwards).
@@ -18,12 +18,12 @@ This repository holds the **Android app download**, a **how-to guide**, and the 
 
 ### First launch
 
-1. **Allow photo access.** PhotoApp needs it to show your new photos. Nothing is uploaded anywhere.
-2. **"Back up your tags?" → Choose Folder.** Android opens a folder picker: create a **new folder inside `DCIM`** (e.g. `DCIM/PhotoApp`), then tap **Use this folder → Allow**. PhotoApp saves a small file per tagged photo there, so your tags survive a phone change. (You can set or change it later in Settings.)
+1. **Allow photo access.** PicJot needs it to show your new photos. Nothing is uploaded anywhere.
+2. **"Back up your tags?" → Choose Folder.** Android opens a folder picker: create a **new folder inside `DCIM`** (e.g. `DCIM/PicJot`), then tap **Use this folder → Allow**. PicJot saves a small file per tagged photo there, so your tags survive a phone change. (You can set or change it later in Settings.)
 
 ### Daily review
 
-PhotoApp shows your **newest untagged photos**, 20 at a time (change this in Settings). For each photo:
+PicJot shows your **newest untagged photos**, 20 at a time (change this in Settings). For each photo:
 
 - **Caption:** type what the moment was ("What's this moment?").
 - **Tags:** type a tag and press Enter or comma to add it; tap a suggestion to reuse one of your common tags; tap a tag to remove it. **Long-press a suggestion to hide it** from the list (photos keep the tag; Settings → Hidden tag suggestions brings it back).
@@ -63,13 +63,13 @@ Everything saves as you go. At the end of a batch you can delete the marked phot
 
 > ⚠️ **Node.js is required.** The backup tool runs on Node.js, which most PCs don't have yet. Install it first from **[nodejs.org](https://nodejs.org)**: download the **LTS** version and accept the default options. You only need to do this once. (If it's missing, the backup window says so.)
 
-Backs up **all photos** from your phone to a folder or drive on your PC over USB, filed by month (`YYYY/MM/`), with PhotoApp's tags and notes saved beside each tagged photo (e.g. `IMG_1234.jpg` + `IMG_1234.jpg.json`). Every copy is verified by content hash, re-runs only copy what's new, and it **never deletes anything from your phone**. It leaves a small receipt on the phone so the app's *Free up space* knows what's safely on the PC.
+Backs up **all photos** from your phone to a folder or drive on your PC over USB, filed by month (`YYYY/MM/`), with PicJot's tags and notes saved beside each tagged photo (e.g. `IMG_1234.jpg` + `IMG_1234.jpg.json`). Every copy is verified by content hash, re-runs only copy what's new, and it **never deletes anything from your phone**. It leaves a small receipt on the phone so the app's *Free up space* knows what's safely on the PC.
 
 **Requirements:** Windows 10/11 and [Node.js](https://nodejs.org) (LTS). No other installs.
 
 **Use it:**
 
-1. Unzip the download anywhere (e.g. `Documents\PhotoApp Backup`). If Windows warns that the files came from the internet, right-click the zip → *Properties* → tick *Unblock* before unzipping.
+1. Unzip the download anywhere (e.g. `Documents\PicJot Backup`). If Windows warns that the files came from the internet, right-click the zip → *Properties* → tick *Unblock* before unzipping.
 2. Plug in your phone by USB, **unlock it**, and choose **File transfer** in the USB notification.
 3. Double-click **`Backup photos.cmd`**. The first time, pick your backup folder; it's remembered, and you can add a desktop shortcut. Later runs: press **Enter** to back up, **S** to sync tags only (a few seconds: copies tag changes made on the phone since the last backup), or **C** to choose a different folder.
 
@@ -82,13 +82,13 @@ The first backup copies everything (a few minutes for a few GB); after that, run
 node backup.js --to "E:\Photos"              # back up from the phone
 node backup.js --to "E:\Photos" --dry-run    # list what would be copied
 node backup.js --to "E:\Photos" --from <dir> # organise an already-copied folder
-node backup.js --to "E:\Photos" --tags-only  # sync PhotoApp's tags only
+node backup.js --to "E:\Photos" --tags-only  # sync PicJot's tags only
 ```
 
-- Reads the phone's `DCIM`, `Pictures` and `Download` folders over the same USB connection File Explorer uses (MTP via `mtp.ps1`); photos only, no videos; no developer mode needed. PhotoApp's tag files are found wherever you keep them inside `DCIM`, `Pictures`, `Download` or `Documents`.
+- Reads the phone's `DCIM`, `Pictures` and `Download` folders over the same USB connection File Explorer uses (MTP via `mtp.ps1`); photos only, no videos; no developer mode needed. PicJot's tag files are found wherever you keep them inside `DCIM`, `Pictures`, `Download` or `Documents`.
 - Every run first re-checks the PC copies; any that are missing or changed are copied again and never counted as backed up.
 - Tags flow phone → PC: edited tags replace the PC's `<photo>.json`; tags cleared in the app (it leaves a "cleared" tag file) delete it. A tag file that's simply missing never deletes anything. Sync tags (**S**) does only this. The app's Settings → PC backup shows how many photos' tags changed since the last backup or sync.
-- Date comes from PhotoApp's metadata, then EXIF, then the filename, then the phone's file date. Photos with no date go to `undated/`.
+- Date comes from PicJot's metadata, then EXIF, then the filename, then the phone's file date. Photos with no date go to `undated/`.
 - The same photo is never stored twice (even if renamed); different photos with the same name get a short hash suffix.
 - Bookkeeping lives in `<backup folder>\.photoapp\` (index, pull log, receipts).
 - Tests: `npm test` (Node's built-in test runner).
@@ -100,4 +100,4 @@ Each tagged photo's metadata is a small JSON file; the format is documented in [
 
 ---
 
-*The PhotoApp source code itself is private; this repository is generated from it.*
+*The PicJot source code itself is private; this repository is generated from it.*

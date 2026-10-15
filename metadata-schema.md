@@ -1,6 +1,6 @@
-# PhotoApp metadata file (sidecar) — schema v2
+# PicJot metadata file (sidecar) — schema v2
 
-The **canonical definition** of PhotoApp's per-photo metadata file. Code that writes it: `buildSidecar` in `src/lib/sidecar.js` (keep the two in step). Readers: the PC backup tool (`pc/backup.js`), and the future timeline web app and PC↔phone metadata sync.
+The **canonical definition** of PicJot's per-photo metadata file. Code that writes it: `buildSidecar` in `src/lib/sidecar.js` (keep the two in step). Readers: the PC backup tool (`pc/backup.js`), and the future timeline web app and PC↔phone metadata sync.
 
 ## Where the files live
 

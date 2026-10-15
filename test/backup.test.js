@@ -190,7 +190,7 @@ test('phone mode with no tag files: the receipt is not pushed, and that is not a
   assert.strictEqual(pushCalls, 0);
   assert.strictEqual(r.receiptPushed, false);
   assert.deepStrictEqual(r.errors, []);
-  assert.ok(logs.some((m) => /No PhotoApp tag folder/.test(m)));
+  assert.ok(logs.some((m) => /No PicJot tag folder/.test(m)));
 });
 
 test('a photo missing on the PC is copied again and never claimed in a receipt', async () => {
