@@ -8,7 +8,7 @@ This repository holds the **Android app download**, a **how-to guide**, and the 
 
 ## 1. Install the app (Android)
 
-**[⬇ Download the app (preview build, ~94 MB)](https://expo.dev/artifacts/eas/unt5jx8RTfEAOoyPil1WTISR_lCy4LoOdiu28h3FE2k.apk)**, or open the [build page](https://expo.dev/accounts/djxprice/projects/photoapp/builds/682a8d53-0cc4-4fcc-9b27-a5abb334cd8f) on your phone (or scan its QR code from a PC). *Hosted by Expo; this link expires on 29 Oct 2026, and new builds get a new link here.*
+**[⬇ Download the app (preview build, ~94 MB)](https://expo.dev/artifacts/eas/jODD5SiQSXXt4cDZ7B20xc4nT5MAfA6Rf1xR1dg0UxU.apk)**, or open the [build page](https://expo.dev/accounts/djxprice/projects/photoapp/builds/bb7fffbb-e5a4-44b1-889a-abd043429f4a) on your phone (or scan its QR code from a PC). *Hosted by Expo; this link expires on 29 Oct 2026, and new builds get a new link here.*
 
 1. Open the downloaded `.apk` on the phone. If asked, allow your browser to **install unknown apps**.
 2. On a **Samsung**, if the install is blocked, turn off *Settings → Security and privacy → Auto Blocker* for the install (turn it back on afterwards).
@@ -26,7 +26,7 @@ This repository holds the **Android app download**, a **how-to guide**, and the 
 PhotoApp shows your **newest untagged photos**, 20 at a time (change this in Settings). For each photo:
 
 - **Caption:** type what the moment was ("What's this moment?").
-- **Tags:** type a tag and press Enter or comma to add it; tap a suggestion to reuse one of your common tags; tap a tag to remove it.
+- **Tags:** type a tag and press Enter or comma to add it; tap a suggestion to reuse one of your common tags; tap a tag to remove it. **Long-press a suggestion to hide it** from the list (photos keep the tag; Settings → Hidden tag suggestions brings it back).
 - **Same as previous:** copies the caption, tags, note and significance from the previous photo. On the first photo of a new batch, it uses the last ones you entered.
 - **Significance:** **Utility** (receipts, screenshots, reminders), **Normal**, or **Important** (the memories you'll want to find again). Important opens the note.
 - **+ Add note:** anything worth remembering: who, why, what happened.
@@ -35,9 +35,9 @@ Then:
 
 | Button | What it does |
 |---|---|
-| **Next** (green) | Saves and moves to the next photo. Swiping left/right on the photo also works. |
-| **←** (left arrow) | Saves and goes back to the previous photo. |
-| **Skip** (yellow) | Marks the photo as reviewed with nothing to add. |
+| **→** (green, bottom right) | Saves and moves to the next photo. Swiping left/right on the photo also works. |
+| **←** (blue) | Saves and goes back to the previous photo. |
+| **Skip** (yellow) | Marks the photo as reviewed with nothing to add. It won't come back for review; to tag it later, find it in **Choose photos** (it shows a ✓). |
 | 🗑 **Trash** | *Marks* the photo for deletion (tap **UNDO** within 5 seconds to take it back). Marked photos are deleted **together at the end**, after Android asks you to confirm. |
 | **✓ Done** (top left) | Stop for now: shows what you've reviewed and what's left. **Done for now** then closes the app. Anything you haven't reviewed comes back next time. |
 

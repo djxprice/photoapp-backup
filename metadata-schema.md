@@ -65,7 +65,7 @@ A cleared record has no caption, tags, note or significance. Tagging the photo a
 | `tags` | string[] | Tags, trimmed, empty ones removed, in the user's spelling. |
 | `note` | string | Free-text note. |
 | `significance` | `"utility"` \| `"normal"` \| `"important"` | How meaningful the photo is. Drives Revery scoring and the timeline (Important). |
-| `skipped` | boolean | The user marked the photo reviewed without tagging it. |
+| `skipped` | boolean | The user marked the photo reviewed without tagging it (the **Skip** button). |
 | `visibility` | `"private"` \| `"family"` \| `"public"` | Who may see it on future shared timelines. Nested: private ⊂ family ⊂ public audiences. Defaults to `private`; the app has no selector yet. |
 | `createdAt` | ISO 8601 UTC \| null | When the photo's metadata was first created. `null` for entries made before stamps existed. |
 | `updatedAt` | ISO 8601 UTC \| null | When the user last changed caption, tags, note, significance or skipped (not bookkeeping). Used by PC↔phone sync to tell which side edited. |
