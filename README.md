@@ -8,7 +8,7 @@ This repository holds the **Android app download**, a **how-to guide**, and the 
 
 ## 1. Install the app (Android)
 
-**[⬇ Download the app (preview build, ~94 MB)](https://expo.dev/artifacts/eas/K_A0U2-UrXEzxS76RkzfdxX9e5BCdh3kIev9sZa47Ow.apk)**, or open the [build page](https://expo.dev/accounts/djxprice/projects/photoapp/builds/b10ae0c9-8b51-4ced-b746-e251a988a438) on your phone (or scan its QR code from a PC). *Hosted by Expo; this link expires on 29 Oct 2026, and new builds get a new link here.*
+**[⬇ Download the app (~39 MB)](https://github.com/djxprice/photoapp-backup/releases/latest/download/PicJot.apk)**: open this page on your phone and tap the link. *It always downloads the newest version; earlier ones are on the [releases page](https://github.com/djxprice/photoapp-backup/releases). For 64-bit Android phones, which is almost every phone from the last several years.*
 
 1. Open the downloaded `.apk` on the phone. If asked, allow your browser to **install unknown apps**.
 2. On a **Samsung**, if the install is blocked, turn off *Settings → Security and privacy → Auto Blocker* for the install (turn it back on afterwards).
@@ -37,19 +37,19 @@ Then:
 |---|---|
 | **→** (green, bottom right) | Saves and moves to the next photo. Swiping left/right on the photo also works. |
 | **←** | Saves and goes back to the previous photo. |
-| **Skip** | Marks the photo as reviewed with nothing to add and takes it out of this batch (tap **UNDO** within 5 seconds to bring it back). It won't come back for review; to tag it later, find it in **Choose photos** (it shows a ✓). |
-| 🗑 **Trash** | *Marks* the photo for deletion (tap **UNDO** within 5 seconds to take it back). Marked photos are deleted **together at the end**, after Android asks you to confirm. |
+| **Skip** | Marks the photo as reviewed with nothing to add and takes it out of this batch (tap **UNDO** within 5 seconds to bring it back). It won't come back for review. To take a skip back later, tap the mustard **⏭ N** badge (top left) and untick the photo: it returns to your review. |
+| 🗑 **Trash** | *Marks* the photo for deletion. Marked photos are deleted **together at the end**, after Android asks you to confirm. Tap the red **🗑 N** badge (top left) to delete them now, or **Review photos** to see them (newest first) and untick any you want to keep; that's also how you take one back. |
 | **✓ Done** (top left) | Stop for now: shows what you've reviewed and what's left. **Done for now** then closes the app. Anything you haven't reviewed comes back next time. |
 
 Everything saves as you go. At the end of a batch you can delete the marked photos, **continue with older photos**, load the previous day or week, pick photos yourself, or tap **Done for now** to close the app.
 
 ### Elsewhere
 
-- **Memories** (top bar): **Revisit memories**: your photos, a few at a time; swipe through them.
+- **✦** (top bar): **Revisit memories**: your photos, a few at a time; swipe through them.
   - **Edit** (top right) opens the same caption, tags, significance and note as the daily review. **Next** saves and moves on; **←** saves and goes back to the memory.
   - **More** (on the last memory) shows the next photos you haven't seen yet. Once you've seen them all, it starts over.
-- **Choose** (top bar): **Choose photos**: pick any photos to tag or edit; a tick means already reviewed.
-- **Settings** (top bar). Changes save as you make them; **←** goes back.
+- **Grid** (top bar): **Choose photos**: pick any photos to tag or edit; a tick means already reviewed.
+- **⚙ Settings** (top bar). Changes save as you make them; **←** goes back.
   - **Photo folders** (its own page): which folders feed your review (Camera by default; tick others you use).
   - **Photos per session:** 10, 20 or 50.
   - **Revisit memories:** how many photos per visit (any number from 1 to 999); the order (**Oldest to Newest**, **Newest to Oldest** or **Random**); and which photos (**Important**, **Tagged**, which includes Important, or **All**, which includes untagged photos from your photo folders). Changing the order or which photos starts over.
