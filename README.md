@@ -48,7 +48,7 @@ Everything saves as you go. At the end of a batch you can delete the marked phot
 - **✦** (top bar): **Revisit memories**: your photos, a few at a time; swipe through them.
   - **Edit** (top right) opens the same caption, tags, significance and note as the daily review. **Next** saves and moves on; **←** saves and goes back to the memory.
   - **More** (on the last memory) shows the next photos you haven't seen yet. Once you've seen them all, it starts over.
-- **Grid** (top bar): **Choose photos**: pick any photos to tag or edit; a tick means already reviewed.
+- **Grid** (top bar): **Choose photos**: pick any photos to tag or edit, grouped by day (newest first), each thumbnail showing the whole photo. Badges, one per corner: a mustard ⏭ skipped (top-left), a red bin marked for deletion (top-right), a green tick tagged (bottom-left), a blue laptop backed up to your PC (bottom-right).
 - **⚙ Settings** (top bar). Changes save as you make them; **←** goes back.
   - **Photo folders** (its own page): which folders feed your review (Camera by default; tick others you use).
   - **Photos per session:** 10, 20 or 50.
