@@ -37,7 +37,7 @@ Then:
 |---|---|
 | **→** (green, bottom right) | Saves and moves to the next photo. Swiping left/right on the photo also works. |
 | **←** | Saves and goes back to the previous photo. |
-| **Skip** | Marks the photo as reviewed with nothing to add and takes it out of this batch (tap **UNDO** within 5 seconds to bring it back). It won't come back for review. To take a skip back later, tap the mustard **⏭ N** badge (top left) and untick the photo: it returns to your review. |
+| **Skip** | Marks the photo as reviewed with nothing to add and takes it out of this batch. It won't come back for review. To take a skip back, tap the mustard **⏭ N** badge (top left) and untick the photo: it returns to your review. |
 | 🗑 **Trash** | *Marks* the photo for deletion. Marked photos are deleted **together at the end**, after Android asks you to confirm. Tap the red **🗑 N** badge (top left) to delete them now, or **Review photos** to see them (newest first) and untick any you want to keep; that's also how you take one back. |
 | **✓ Done** (top left) | Stop for now: shows what you've reviewed and what's left. **Done for now** then closes the app. Anything you haven't reviewed comes back next time. |
 
