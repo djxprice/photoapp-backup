@@ -55,7 +55,7 @@ Everything saves as you go. At the end of a batch you can delete the marked phot
   - **Revisit memories:** how many photos per visit (any number from 1 to 999); the order (**Oldest to Newest**, **Newest to Oldest** or **Random**); and which photos (**Important**, **Tagged**, which includes Important, or **All**, which includes untagged photos from your photo folders). Changing the order or which photos starts over.
   - **Tag backup:** the folder your tag files go to.
   - **PC backup:** your last backup, and how many photos' tags you've changed since (run **Sync tags** on the PC to copy them; clearing a photo's tags removes them on the PC too).
-  - **Free up space:** only after a PC backup (below). Deletes photos from the phone that the PC backup has verified copies of, keeping the ones you choose (tagged / Utility / Important). Android asks to confirm.
+  - **Free up space:** only after a PC backup (below). Deletes photos from the phone that the PC backup has verified copies of, keeping the ones you choose: photos you **haven't reviewed yet** (on by default, so they stay for your review), tagged, Utility or Important. Photos taken after the last backup are never touched. Android asks to confirm.
   - **About:** the version, and a link to this guide.
 
 ## 3. PC backup tool (Windows)
