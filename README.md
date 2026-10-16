@@ -50,6 +50,7 @@ Everything saves as you go. At the end of a batch you can delete the marked phot
   - **More** (on the last memory) shows the next photos you haven't seen yet. Once you've seen them all, it starts over.
 - **Grid** (top bar): **Choose photos**: pick any photos to tag or edit, grouped by day (newest first), each thumbnail showing the whole photo. Badges, one per corner: a mustard ⏭ skipped (top-left), a red bin marked for deletion (top-right), a green tick tagged (bottom-left), a blue laptop backed up to your PC (bottom-right).
 - **⚙ Settings** (top bar). Changes save as you make them; **←** goes back.
+  - **Daily reminder:** a notification every day at a time you choose (7:00 PM unless you change it). Optionally skipped on days you've already opened PicJot. Android asks to allow notifications the first time you switch it on.
   - **Photo folders** (its own page): which folders feed your review (Camera by default; tick others you use).
   - **Photos per session:** 10, 20 or 50.
   - **Revisit memories:** how many photos per visit (any number from 1 to 999); the order (**Oldest to Newest**, **Newest to Oldest** or **Random**); and which photos (**Important**, **Tagged**, which includes Important, or **All**, which includes untagged photos from your photo folders). Changing the order or which photos starts over.
