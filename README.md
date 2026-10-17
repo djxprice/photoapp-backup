@@ -48,6 +48,7 @@ Everything saves as you go. At the end of a batch you can delete the marked phot
 - **✦** (top bar): **Revisit memories**: your photos, a few at a time; swipe through them.
   - **Edit** (top right) opens the same caption, tags, significance and note as the daily review. **Next** saves and moves on; **←** saves and goes back to the memory.
   - **More** (on the last memory) shows the next photos you haven't seen yet. Once you've seen them all, it starts over.
+  - **Find** (top right) searches all your tagged and Important photos. Type words from a caption, tag or note (a year such as 2025 works too), or tap a tag, a year and then a month; each shows how many photos it would give. Tap a photo to see the results full screen, then swipe through them. **←** goes back to the list, and again to your memories.
 - **Grid** (top bar): **Choose photos**: pick any photos to tag or edit, grouped by day (newest first), each thumbnail showing the whole photo. Badges, one per corner: a mustard ⏭ skipped (top-left), a red bin marked for deletion (top-right), a green tick tagged (bottom-left), a blue laptop backed up to your PC (bottom-right).
 - **⚙ Settings** (top bar). Changes save as you make them; **←** goes back.
   - **Daily reminder:** a notification every day at a time you choose (7:00 PM unless you change it). Optionally skipped on days you've already opened PicJot. Android asks to allow notifications the first time you switch it on.
