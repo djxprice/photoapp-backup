@@ -53,13 +53,15 @@ Everything saves as you go. At the end of a batch you can delete the marked phot
   - **Find** (top right) searches all your tagged and Important photos. Type words from a caption, tag or note (a year such as 2025 works too), or tap a tag, a year and then a month; each shows how many photos it would give. Tap a photo to see the results full screen, then swipe through them. **←** goes back to the list, and again to your memories.
 - **Grid** (top bar): **Choose photos**: pick any photos to tag or edit, grouped by day (newest first), each thumbnail showing the whole photo. Badges, one per corner: a mustard ⏭ skipped (top-left), a red bin marked for deletion (top-right), a green tick tagged (bottom-left), a blue laptop backed up to your PC (bottom-right).
 - **⚙ Settings** (top bar). Changes save as you make them; **←** goes back.
-  - **Daily reminder:** a notification every day at a time you choose (7:00 PM unless you change it). Optionally skipped on days you've already opened PicJot. Android asks to allow notifications the first time you switch it on.
-  - **Photo folders** (its own page): which folders feed your review (Camera by default; tick others you use).
-  - **Photos per session:** 10, 20 or 50.
+  - **Backup:**
+    - **Free up space:** only after a PC backup (below). It shows your last backup and how many photos' tags you've changed since (run **Sync tags** on the PC to copy them; clearing a photo's tags removes them on the PC too). It deletes photos from the phone that the PC backup has verified copies of, keeping the ones you choose: photos you **haven't reviewed yet** (on by default, so they stay for your review), tagged, Utility or Important. Photos taken after the last backup are never touched. **Review N photos** then shows exactly which photos would be deleted; untick any to keep, then **Delete** (Android asks to confirm). Deleted photos skip Samsung's Trash: your PC copy is the backup.
+    - **Tag folder:** the folder your tag files go to (**Change** to pick another).
+  - **Daily review:**
+    - **Photos per session:** 10, 20 or 50.
+    - **Photo folders** (its own page): which folders feed your review (Camera by default; tick others like Expert RAW if you use them).
+    - **Daily reminder:** a notification every day at a time you choose (7:00 PM unless you change it). Optionally skipped on days you've already opened PicJot. Android asks to allow notifications the first time you switch it on.
   - **Revisit memories:** how many photos per visit (any number from 1 to 999); the order (**Oldest to Newest**, **Newest to Oldest** or **Random**); and which photos (**Important**, **Tagged**, which includes Important, or **All**, which includes untagged photos from your photo folders). And **Each visit**: **Continue** picks up where the last visit left off (no repeats until you've seen them all; changing the order or which photos starts over), **Start fresh** starts from the beginning every time, and **Random** starts each visit at a random point in the order and carries on from there.
-  - **Tag backup:** the folder your tag files go to.
-  - **PC backup:** your last backup, and how many photos' tags you've changed since (run **Sync tags** on the PC to copy them; clearing a photo's tags removes them on the PC too).
-  - **Free up space:** only after a PC backup (below). Deletes photos from the phone that the PC backup has verified copies of, keeping the ones you choose: photos you **haven't reviewed yet** (on by default, so they stay for your review), tagged, Utility or Important. Photos taken after the last backup are never touched. **Review N photos** then shows exactly which photos would be deleted; untick any to keep, then **Delete** (Android asks to confirm). Deleted photos skip Samsung's Trash: your PC copy is the backup.
+  - **Hidden tag suggestions** (only when you've hidden some): **Show** puts one back in the suggestions.
   - **About:** the version, and a link to this guide.
 
 ## 3. PC backup tool (Windows)
