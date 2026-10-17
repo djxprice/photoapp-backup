@@ -1,5 +1,7 @@
 # PicJot: app download, guide and PC backup tool
 
+*Take a Pic, Jot a note*
+
 **PicJot** (formerly PhotoApp) is a local-first Android app for capturing the story behind your photos: a quick daily review of new photos with a caption, tags, a note and a significance (Utility / Normal / Important), plus "Revisit memories" to resurface them. No cloud: your photos and tags stay on your phone and your own PC.
 
 This repository holds the **Android app download**, a **how-to guide**, and the **PC backup tool** (Windows; ⚠️ **requires [Node.js](https://nodejs.org)**, see [section 3](#3-pc-backup-tool-windows)).
