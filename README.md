@@ -31,7 +31,7 @@ PicJot shows your **newest untagged photos**, 20 at a time (change this in Setti
 - **Tags:** type a tag and press Enter or comma to add it; tap a suggestion to reuse one of your common tags; tap a tag to remove it. **Long-press a suggestion to hide it** from the list (photos keep the tag; Settings → Hidden tag suggestions brings it back).
 - **Same as previous:** copies the caption, tags, note and significance from the previous photo. On the first photo of a new batch, it uses the last ones you entered.
 - **Significance:** **Utility** (receipts, screenshots, reminders), **Normal**, or **Important** (the memories you'll want to find again). Important opens the note.
-- **+ Add note:** anything worth remembering: who, why, what happened.
+- **+ Jot a note:** anything worth remembering: who, why, what happened.
 
 Then:
 
