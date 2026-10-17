@@ -8,7 +8,7 @@ This repository holds the **Android app download**, a **how-to guide**, and the 
 
 ## 1. Install the app (Android)
 
-**[⬇ Download the app (~39 MB)](https://github.com/djxprice/photoapp-backup/releases/latest/download/PicJot.apk)**: open this page on your phone and tap the link. *It always downloads the newest version; earlier ones are on the [releases page](https://github.com/djxprice/photoapp-backup/releases). For 64-bit Android phones, which is almost every phone from the last several years.*
+**[⬇ Download the app (~40 MB)](https://github.com/djxprice/photoapp-backup/releases/latest/download/PicJot.apk)**: open this page on your phone and tap the link. *It always downloads the newest version; earlier ones are on the [releases page](https://github.com/djxprice/photoapp-backup/releases). For 64-bit Android phones, which is almost every phone from the last several years.*
 
 1. Open the downloaded `.apk` on the phone. If asked, allow your browser to **install unknown apps**.
 2. On a **Samsung**, if the install is blocked, turn off *Settings → Security and privacy → Auto Blocker* for the install (turn it back on afterwards).
