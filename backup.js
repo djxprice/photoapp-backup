@@ -120,6 +120,7 @@ async function runBackup({
   pull = pullFromPhone,
   push = pushToPhone,
   now = () => new Date(),
+  over = 'USB', // how the phone is reached, for the log ('Wi-Fi' from pc/receiver.js)
 }) {
   const meta = path.join(to, '.photoapp');
   const staging = path.join(meta, 'staging');
@@ -222,8 +223,10 @@ async function runBackup({
     // Plain ASCII: the Windows console mangles typographic characters.
     log(
       tagsOnly
-        ? `Reading PicJot's tag folder (${state.sidecarFolder}) on the phone over USB...`
-        : 'Reading the phone over USB... (the first run copies everything and can take a while)'
+        ? `Reading PicJot's tag folder (${state.sidecarFolder}) on the phone over ${over}...`
+        : over === 'USB'
+          ? 'Reading the phone over USB... (the first run copies everything and can take a while)'
+          : `Filing what the phone sent over ${over}...`
     );
     const r = await pull({
       staging,

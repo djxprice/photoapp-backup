@@ -10,7 +10,7 @@ This repository holds the **Android app download**, a **how-to guide**, and the 
 
 ## 1. Install the app (Android)
 
-**[⬇ Download the app (~40 MB)](https://github.com/djxprice/photoapp-backup/releases/latest/download/PicJot.apk)**: open this page on your phone and tap the link. *It always downloads the newest version; earlier ones are on the [releases page](https://github.com/djxprice/photoapp-backup/releases). For 64-bit Android phones, which is almost every phone from the last several years.*
+**[⬇ Download the app (~41 MB)](https://github.com/djxprice/photoapp-backup/releases/latest/download/PicJot.apk)**: open this page on your phone and tap the link. *It always downloads the newest version; earlier ones are on the [releases page](https://github.com/djxprice/photoapp-backup/releases). For 64-bit Android phones, which is almost every phone from the last several years.*
 
 1. Open the downloaded `.apk` on the phone. If asked, allow your browser to **install unknown apps**.
 2. On a **Samsung**, if the install is blocked, turn off *Settings → Security and privacy → Auto Blocker* for the install (turn it back on afterwards).
@@ -54,6 +54,7 @@ Everything saves as you go. At the end of a batch you can delete the marked phot
 - **Grid** (top bar): **Choose photos**: pick any photos to tag or edit, grouped by day (newest first), each thumbnail showing the whole photo. Badges, one per corner: a mustard ⏭ skipped (top-left), a red bin marked for deletion (top-right), a green tick tagged (bottom-left), a blue laptop backed up to your PC (bottom-right).
 - **⚙ Settings** (top bar). Changes save as you make them; **←** goes back.
   - **Backup:**
+    - **Back up over Wi-Fi:** pair once with your PC (scan the QR code that **PicJot Receiver** shows on the PC), then tap **Back up now** whenever the receiver is open there. Same result as the USB backup: only photos the PC doesn't have are sent, each is checked on the PC, your tags go too, and the receipt Free up space needs comes back. Keep PicJot open while it runs (the screen stays on); **Stop** keeps what was sent.
     - **Free up space:** only after a PC backup (below). It shows your last backup and how many photos' tags you've changed since (run **Sync tags** on the PC to copy them; clearing a photo's tags removes them on the PC too). It deletes photos from the phone that the PC backup has verified copies of, keeping the ones you choose: photos you **haven't reviewed yet** (on by default, so they stay for your review), tagged, Utility or Important. Photos taken after the last backup are never touched. **Review N photos** then shows exactly which photos would be deleted; untick any to keep, then **Delete** (Android asks to confirm). Deleted photos skip Samsung's Trash: your PC copy is the backup.
     - **Tag folder:** the folder your tag files go to (**Change** to pick another).
   - **Daily review:**
@@ -70,7 +71,7 @@ Everything saves as you go. At the end of a batch you can delete the marked phot
 
 > ⚠️ **Node.js is required.** The backup tool runs on Node.js, which most PCs don't have yet. Install it first from **[nodejs.org](https://nodejs.org)**: download the **LTS** version and accept the default options. You only need to do this once. (If it's missing, the backup window says so.)
 
-Backs up **all photos** from your phone to a folder or drive on your PC over USB, filed by month (`YYYY/MM/`), with PicJot's tags and notes saved beside each tagged photo (e.g. `IMG_1234.jpg` + `IMG_1234.jpg.json`). Every copy is verified by content hash, re-runs only copy what's new, and it **never deletes anything from your phone**. It leaves a small receipt on the phone so the app's *Free up space* knows what's safely on the PC.
+Backs up **all photos** from your phone to a folder or drive on your PC over USB or Wi-Fi, filed by month (`YYYY/MM/`), with PicJot's tags and notes saved beside each tagged photo (e.g. `IMG_1234.jpg` + `IMG_1234.jpg.json`). Every copy is verified by content hash, re-runs only copy what's new, and it **never deletes anything from your phone**. It leaves a small receipt on the phone so the app's *Free up space* knows what's safely on the PC.
 
 **Requirements:** Windows 10/11 and [Node.js](https://nodejs.org) (LTS). No other installs.
 
@@ -81,6 +82,15 @@ Backs up **all photos** from your phone to a folder or drive on your PC over USB
 3. Double-click **`Backup photos.cmd`**. The first time, pick your backup folder; it's remembered, and you can add a desktop shortcut. Later runs: press **Enter** to back up, **S** to sync tags only (a few seconds: copies tag changes made on the phone since the last backup), or **C** to choose a different folder.
 
 The first backup copies everything (a few minutes for a few GB); after that, runs take seconds plus any new photos.
+
+**Over Wi-Fi instead (no cable):**
+
+1. Run the USB backup once first (it chooses the backup folder), or have **`Backup photos.cmd`** choose it.
+2. Double-click **`PicJot Receiver.cmd`** (in the same folder). A page with a QR code opens. The first time, Windows asks whether to allow Node.js: allow it on **private networks**. If Windows has your home network set to *Public*, switch it to *Private* (Settings → Network & internet → your connection → Network profile type).
+3. In PicJot: **Settings → Backup → Back up over Wi-Fi → Pair with PC**, and scan the code (once; the phone remembers the PC).
+4. Tap **Back up now** whenever the receiver window is open. Close the window to stop the receiver.
+
+The connection is encrypted with the PC's own certificate, which the phone checks; only paired phones are accepted, and only on your home network. A backup that's interrupted carries on where it stopped next time.
 
 <details>
 <summary>Command line and details</summary>
