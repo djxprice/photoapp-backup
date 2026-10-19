@@ -2,7 +2,7 @@
 
 *Take a Pic, Jot a note*
 
-**PicJot** (formerly PhotoApp) is a local-first Android app for capturing the story behind your photos: a quick daily review of new photos with a caption, tags, a note and a significance (Utility / Normal / Important), plus "Revisit memories" to resurface them. No cloud: your photos and tags stay on your phone and your own PC.
+**PicJot** (formerly PhotoApp) is a local-first Android app for capturing the story behind your photos: a quick daily review of new photos with a caption, tags and a note, marking the ones that matter **Important** or **Timeline**, plus "Revisit memories" to resurface them. No cloud: your photos and tags stay on your phone and your own PC.
 
 This repository holds the **Android app download**, a **how-to guide**, and the **PC backup tool** (Windows; ⚠️ **requires [Node.js](https://nodejs.org)**, see [section 3](#3-pc-backup-tool-windows)).
 
@@ -29,7 +29,7 @@ PicJot shows your **newest untagged photos**, 20 at a time (change this in Setti
 
 - **Caption:** type what the moment was ("What's this moment?").
 - **Tags:** type a tag and press Enter or comma to add it; tap a suggestion to reuse one of your common tags; tap a tag to remove it. **Long-press a suggestion to hide it** from the list (photos keep the tag; Settings → Hidden tag suggestions brings it back).
-- **Same as previous:** copies the caption, tags, note and significance from the previous photo. On the first photo of a new batch, it uses the last ones you entered.
+- **Same as previous:** copies the caption, tags, note and mark (Important or Timeline) from the previous photo. On the first photo of a new batch, it uses the last ones you entered.
 - **Important** or **Timeline:** tap one to mark the photo, tap it again to clear it. **Important** is for the memories you'll want to find again; **Timeline** for the big moments (they'll make up your timeline, and count as Important everywhere). A photo with neither is Normal. Marking a photo opens the note.
 - **+ Jot a note:** anything worth remembering: who, why, what happened.
 - **Keep on phone** (next to Important and Timeline): tap it for photos you want to keep on the phone (to show people, or to have with you): **Free up space** never deletes them, even once they're backed up.
