@@ -30,11 +30,11 @@ PicJot shows your **newest untagged photos**, 20 at a time (change this in Setti
 - **Caption:** type what the moment was ("What's this moment?").
 - **Tags:** type a tag and press Enter or comma to add it; tap a suggestion to reuse one of your common tags; tap a tag to remove it. **Long-press a suggestion to hide it** from the list (photos keep the tag; Settings → Hidden tag suggestions brings it back).
 - **Same as previous:** copies the caption, tags, note and significance from the previous photo. On the first photo of a new batch, it uses the last ones you entered.
-- **Significance:** **Normal**, **Important** (the memories you'll want to find again) or **Timeline** (the big moments: they'll make up your timeline, and count as Important everywhere). Important and Timeline open the note.
+- **Important** or **Timeline:** tap one to mark the photo, tap it again to clear it. **Important** is for the memories you'll want to find again; **Timeline** for the big moments (they'll make up your timeline, and count as Important everywhere). A photo with neither is Normal. Marking a photo opens the note.
 - **+ Jot a note:** anything worth remembering: who, why, what happened.
-- **Keep on phone:** tap it for photos you want to keep on the phone (to show people, or to have with you): **Free up space** never deletes them, even once they're backed up.
+- **Keep on phone** (next to Important and Timeline): tap it for photos you want to keep on the phone (to show people, or to have with you): **Free up space** never deletes them, even once they're backed up.
 
-The photo shows when it was taken (e.g. "Yesterday · 3:42 PM"; photos saved from messages or the web that have no date taken say when they were saved). Tap it for the photo's **details**: the date and time, file name and folder, size, camera and settings, its GPS position as coordinates (if it has one), and whether it's in your PC backup.
+The photo shows when it was taken (e.g. "Yesterday · 3:42 PM"; photos saved from messages or the web that have no date taken say when they were saved). Tap it for the photo's **details**: the date and time, file name and folder, size, camera and settings, its GPS position as coordinates (if it has one) with **Open in Maps** (opens your map app at that spot; the position is only sent when you tap it), and whether it's in your PC backup.
 
 Then:
 
