@@ -54,7 +54,7 @@ Everything saves as you go. At the end of a batch you can delete the marked phot
 - **Grid** (top bar): **Choose photos**: pick any photos to tag or edit, grouped by day (newest first), each thumbnail showing the whole photo. Badges, one per corner: a mustard ⏭ skipped (top-left), a red bin marked for deletion (top-right), a green tick tagged (bottom-left), a blue laptop backed up to your PC (bottom-right).
 - **⚙ Settings** (top bar). Changes save as you make them; **←** goes back.
   - **Backup:**
-    - **Back up over Wi-Fi:** pair once with your PC (scan the QR code that **PicJot Receiver** shows on the PC), then tap **Back up now** whenever the receiver is open there. Same result as the USB backup: only photos the PC doesn't have are sent, each is checked on the PC, your tags go too, and the receipt Free up space needs comes back. Keep PicJot open while it runs (the screen stays on); **Stop** keeps what was sent.
+    - **Back up over Wi-Fi:** pair once with your PC (scan the QR code that **PicJot Receiver** shows on the PC), then tap **Back up now** whenever the PC is on: the receiver runs in the background there. Same result as the USB backup: only photos the PC doesn't have are sent, each is checked on the PC, your tags go too, and the receipt Free up space needs comes back. Keep PicJot open while it runs (the screen stays on); **Stop** keeps what was sent. If the PC's network address changes, PicJot finds it again by itself.
     - **Free up space:** only after a PC backup (below). It shows your last backup and how many photos' tags you've changed since (run **Sync tags** on the PC to copy them; clearing a photo's tags removes them on the PC too). It deletes photos from the phone that the PC backup has verified copies of, keeping the ones you choose: photos you **haven't reviewed yet** (on by default, so they stay for your review), tagged, Utility or Important. Photos taken after the last backup are never touched. **Review N photos** then shows exactly which photos would be deleted; untick any to keep, then **Delete** (Android asks to confirm). Deleted photos skip Samsung's Trash: your PC copy is the backup.
     - **Tag folder:** the folder your tag files go to (**Change** to pick another).
   - **Daily review:**
@@ -85,12 +85,14 @@ The first backup copies everything (a few minutes for a few GB); after that, run
 
 **Over Wi-Fi instead (no cable):**
 
-1. Run the USB backup once first (it chooses the backup folder), or have **`Backup photos.cmd`** choose it.
-2. Double-click **`PicJot Receiver.cmd`** (in the same folder). A page with a QR code opens. The first time, Windows asks whether to allow Node.js: allow it on **private networks**. If Windows has your home network set to *Public*, switch it to *Private* (Settings → Network & internet → your connection → Network profile type).
-3. In PicJot: **Settings → Backup → Back up over Wi-Fi → Pair with PC**, and scan the code (once; the phone remembers the PC).
-4. Tap **Back up now** whenever the receiver window is open. Close the window to stop the receiver.
+1. Double-click **`PicJot Receiver.cmd`** (in the same folder). The first time it sets itself up (a few seconds) and asks for the backup folder if you haven't chosen one with the USB backup. Then **PicJot Receiver runs in the background**, with an icon by the clock (click **^** if you don't see it), and **starts with Windows** from then on. A page with a QR code opens.
+2. The first time, Windows asks whether to allow Node.js: allow it on **private networks**. If Windows has your home network set to *Public*, switch it to *Private* (Settings → Network & internet → your connection → Network profile type).
+3. In PicJot: **Settings → Backup → Back up over Wi-Fi → Pair with PC**, and scan the code (once; the phone remembers the PC). Pairing the same phone again later replaces its earlier pairing.
+4. Tap **Back up now** whenever the PC is on. A notification on the PC says when a backup has finished, and the PC doesn't go to sleep while one runs.
 
-The connection is encrypted with the PC's own certificate, which the phone checks; only paired phones are accepted, and only on your home network. A backup that's interrupted carries on where it stopped next time.
+**The icon by the clock:** click it to see the receiver's page (the last backup, paired phones, recent activity; **Forget** unpairs a phone you no longer use, e.g. a lost one). Right-click it to **pair a phone**, **change the backup folder**, turn **Start with Windows** off or on, or **quit**.
+
+The connection is encrypted with the PC's own certificate, which the phone checks; only paired phones are accepted, and only on your home network. A backup that's interrupted carries on where it stopped next time. If the backup drive is unplugged, the phone says so.
 
 <details>
 <summary>Command line and details</summary>

@@ -4,7 +4,7 @@
   "private": true,
   "description": "PicJot PC backup tool: back up an Android phone's photos and PicJot's tags to a PC folder over USB or Wi-Fi.",
   "scripts": {
-    "test": "node --test test/exif.test.js test/plan.test.js test/backup.test.js test/cert.test.js test/receiver.test.js",
+    "test": "node --test test/exif.test.js test/plan.test.js test/backup.test.js test/cert.test.js test/receiver.test.js test/mdns.test.js",
     "backup": "node backup.js",
     "receiver": "node receiver.js"
   }

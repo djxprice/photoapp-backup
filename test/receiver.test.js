@@ -8,7 +8,7 @@ const http = require('http');
 const https = require('https');
 const crypto = require('crypto');
 
-const { createReceiver, isPrivateAddress, safeRel, isPhotoRel } = require('../receiver');
+const { createReceiver, isPrivateAddress, safeRel, isPhotoRel, backupText, parseArgs } = require('../receiver');
 const { spkiSha256 } = require('../lib/cert');
 
 const quiet = () => {};
@@ -18,11 +18,25 @@ function tmp() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'picjot-recv-'));
 }
 
+// A GET on the local pages: { status, text }. `host` overrides the Host header.
+function getPage(url, host) {
+  const u = new URL(url);
+  return new Promise((resolve, reject) => {
+    http
+      .get({ host: u.hostname, port: u.port, path: u.pathname, headers: host ? { host } : {} }, (res) => {
+        let text = '';
+        res.on('data', (d) => (text += d));
+        res.on('end', () => resolve({ status: res.statusCode, text }));
+      })
+      .on('error', reject);
+  });
+}
+
 // The phone's side of a request: HTTPS, the receiver's key pinned, JSON or
 // raw bytes. Resolves { status, body }.
-function call(port, pin, method, urlPath, { token, json, bytes, contentLength } = {}) {
+function call(port, pin, method, urlPath, { token, json, bytes, contentLength, headers: extra } = {}) {
   return new Promise((resolve, reject) => {
-    const headers = {};
+    const headers = { ...extra };
     if (token) headers.authorization = `Bearer ${token}`;
     let payload = null;
     if (json !== undefined) {
@@ -115,10 +129,113 @@ test('pairing: one-time code, then a token; the QR text carries the pin', async 
     assert.strictEqual((await api('POST', '/v1/inventory', { json: { files: [] } })).status, 401);
     assert.strictEqual((await api('POST', '/v1/inventory', { token: `${ok.body.phoneId}.wrong`, json: { files: [] } })).status, 401);
 
-    // The pairing page (this PC only) draws the QR code.
-    const page = await new Promise((resolve) => http.get(pageUrl, (res) => { let t = ''; res.on('data', (d) => (t += d)); res.on('end', () => resolve(t)); }));
-    assert.match(page, /<svg/);
-    assert.match(page, /Galaxy/);
+    // The pairing page (this PC only) draws the QR code; the status page
+    // lists the paired phone.
+    const pairPage = await getPage(`${pageUrl}pair`);
+    assert.match(pairPage.text, /<svg/);
+    const statusPage = await getPage(pageUrl);
+    assert.strictEqual(statusPage.status, 200);
+    assert.match(statusPage.text, /Galaxy/);
+    assert.match(statusPage.text, /Pair a phone/);
+  } finally {
+    await receiver.stop();
+  }
+});
+
+// A form POST to the local pages: { status, location }.
+function postForm(url, fields, headers = {}) {
+  const u = new URL(url);
+  const body = new URLSearchParams(fields).toString();
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      { host: u.hostname, port: u.port, path: u.pathname, method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', 'content-length': Buffer.byteLength(body), ...headers } },
+      (res) => {
+        res.resume();
+        res.on('end', () => resolve({ status: res.statusCode, location: res.headers.location }));
+      }
+    );
+    req.on('error', reject);
+    req.end(body);
+  });
+}
+
+test('the same phone pairing again replaces its earlier pairing; another phone doesn\'t', async () => {
+  const { receiver, api, configDir } = await setup();
+  try {
+    const pairAs = async (json) => {
+      const r = await api('POST', '/v1/pair', { json: { code: receiver.currentPairing().code, ...json } });
+      assert.strictEqual(r.status, 200);
+      return `${r.body.phoneId}.${r.body.token}`;
+    };
+    const inv = (token, headers) => api('POST', '/v1/inventory', { token, json: { files: [] }, headers });
+    const keyA = 'A'.repeat(43);
+    const keyB = 'B'.repeat(43);
+
+    const first = await pairAs({ phoneName: 'Galaxy', deviceKey: keyA });
+    const second = await pairAs({ phoneName: 'Galaxy', deviceKey: keyA });
+    assert.strictEqual(receiver.status().phoneCount, 1, 'replaced, not added');
+    assert.strictEqual((await inv(first)).status, 401, 'the earlier token stops working');
+    assert.strictEqual((await inv(second)).status, 200);
+    assert.ok(receiver.status().recent.some((r) => /Paired with Galaxy again/.test(r.text)));
+
+    // The same model, a different phone: both stay.
+    await pairAs({ phoneName: 'Galaxy', deviceKey: keyB });
+    assert.strictEqual(receiver.status().phoneCount, 2);
+
+    // A pairing from before phones sent a key gets one from its next request,
+    // and is replaced when that phone pairs again.
+    const legacy = await pairAs({ phoneName: 'Pixel' });
+    assert.strictEqual(receiver.status().phoneCount, 3);
+    assert.strictEqual((await inv(legacy, { 'x-picjot-device': 'C'.repeat(43) })).status, 200);
+    await pairAs({ phoneName: 'Pixel', deviceKey: 'C'.repeat(43) });
+    assert.strictEqual(receiver.status().phoneCount, 3);
+    assert.strictEqual((await inv(legacy)).status, 401);
+
+    // Malformed keys are ignored (the phone is simply added).
+    await pairAs({ phoneName: 'Odd', deviceKey: 'short' });
+    assert.strictEqual(receiver.status().phoneCount, 4);
+    const saved = JSON.parse(fs.readFileSync(path.join(configDir, 'receiver.json'), 'utf8'));
+    assert.strictEqual(Object.values(saved.phones).filter((p) => p.deviceKey === keyA).length, 1);
+  } finally {
+    await receiver.stop();
+  }
+});
+
+test('Forget on the status page unpairs a phone; other pages can\'t do it', async () => {
+  const { receiver, api, pageUrl } = await setup();
+  try {
+    const token = await pairPhone(api, receiver);
+    const phoneId = token.split('.')[0];
+    const page = (await getPage(pageUrl)).text;
+    const formToken = /name="t" value="([^"]+)"/.exec(page)[1];
+    assert.match(page, new RegExp(`name="phone" value="${phoneId}"`));
+    const port = new URL(pageUrl).port;
+
+    assert.strictEqual((await postForm(`${pageUrl}forget`, { phone: phoneId, t: 'guess' })).status, 403, 'wrong token');
+    assert.strictEqual(
+      (await postForm(`${pageUrl}forget`, { phone: phoneId, t: formToken }, { origin: 'https://evil.example' })).status,
+      403,
+      'another site'
+    );
+    assert.strictEqual((await api('POST', '/v1/inventory', { token, json: { files: [] } })).status, 200, 'still paired');
+
+    const ok = await postForm(`${pageUrl}forget`, { phone: phoneId, t: formToken }, { origin: `http://127.0.0.1:${port}` });
+    assert.strictEqual(ok.status, 303);
+    assert.strictEqual(ok.location, '/');
+    assert.strictEqual(receiver.status().phoneCount, 0);
+    assert.strictEqual((await api('POST', '/v1/inventory', { token, json: { files: [] } })).status, 401, 'its token no longer works');
+  } finally {
+    await receiver.stop();
+  }
+});
+
+test('the local pages refuse requests addressed to another name (DNS rebinding)', async () => {
+  const { receiver, pageUrl } = await setup();
+  try {
+    const port = new URL(pageUrl).port;
+    assert.strictEqual((await getPage(`${pageUrl}pair`, `evil.example:${port}`)).status, 403);
+    assert.strictEqual((await getPage(`${pageUrl}api/status`, `evil.example:${port}`)).status, 403);
+    assert.strictEqual((await getPage(`${pageUrl}api/status`, `localhost:${port}`)).status, 200);
   } finally {
     await receiver.stop();
   }
@@ -156,6 +273,8 @@ test('a backup over Wi-Fi: list, send, finish; files filed, tags beside, receipt
     let inv = await api('POST', '/v1/inventory', { token, json: { phone: 'Galaxy S', files } });
     assert.strictEqual(inv.status, 200);
     assert.deepStrictEqual(inv.body.need.sort(), [rel1, rel2].sort(), 'only valid photo paths');
+    assert.ok(receiver.status().busy, 'backing up (the tray keeps the PC awake)');
+    assert.strictEqual(receiver.status().phone, 'Galaxy S');
 
     const put = (rel, bytes, extra) => api('PUT', `/v1/file?rel=${encodeURIComponent(rel)}`, { token, bytes, ...extra });
     assert.strictEqual((await put('DCIM/Camera/other.jpg', photo1)).status, 409, 'not listed');
@@ -191,6 +310,11 @@ test('a backup over Wi-Fi: list, send, finish; files filed, tags beside, receipt
     assert.ok(receipt.photos.some((p) => p.hash === md5(photo1)));
     assert.match(fin.body.receipt.name, /^backup-receipt-/);
     assert.ok(fin.body.tagSync && JSON.parse(fin.body.tagSync.text).type === 'photoapp-tag-sync');
+    const s = receiver.status();
+    assert.ok(!s.busy, 'done');
+    assert.strictEqual(s.lastBackup.phone, 'Galaxy S');
+    assert.strictEqual(s.lastBackup.text, '2 new photos backed up.');
+    assert.ok(s.recent.some((r) => /Backup from Galaxy S finished/.test(r.text)));
 
     // Next time: nothing new to send, and the newest receipt still comes back.
     inv = await api('POST', '/v1/inventory', { token, json: { files } });
@@ -213,9 +337,53 @@ test('a backup over Wi-Fi: list, send, finish; files filed, tags beside, receipt
   }
 });
 
-test('refuses to start when the backup folder is missing (an unplugged drive)', async () => {
-  const receiver = createReceiver({ configDir: tmp(), to: path.join(tmp(), 'gone'), port: 0, host: '127.0.0.1', log: quiet });
-  await assert.rejects(receiver.start(), /backup folder isn't available/);
+test('without its backup drive it keeps running, tells the phone, and carries on once the drive is back', async () => {
+  // A drive letter that isn't there stands in for an unplugged drive.
+  const letters = 'QRSTUVWXYZ'.split('').filter((l) => !fs.existsSync(`${l}:\\`));
+  const missing = process.platform === 'win32' ? `${letters[0]}:\\Photos` : '/nonexistent-drive/Photos';
+  const present = tmp();
+  let to = missing;
+  const receiver = createReceiver({ configDir: tmp(), to: () => to, port: 0, host: '127.0.0.1', log: quiet });
+  const { port } = await receiver.start();
+  const api = (method, p, opts) => call(port, receiver.spkiSha256, method, p, opts);
+  try {
+    const hello = await api('GET', '/v1/hello');
+    assert.strictEqual(hello.body.ready, false);
+    assert.match(hello.body.problem, /isn't available: is the backup drive connected/);
+    const token = await pairPhone(api, receiver);
+    const inv = await api('POST', '/v1/inventory', { token, json: { files: [] } });
+    assert.strictEqual(inv.status, 503);
+    assert.match(inv.body.error, /backup drive/);
+    assert.ok(receiver.status().problem);
+
+    to = present; // plugged back in (or another folder chosen): no restart needed
+    assert.strictEqual((await api('GET', '/v1/hello')).body.ready, true);
+    assert.strictEqual((await api('POST', '/v1/inventory', { token, json: { files: [] } })).status, 200);
+    assert.ok(fs.existsSync(path.join(present, '.photoapp', 'wifi-session.json')), 'the session lives in the new folder');
+  } finally {
+    await receiver.stop();
+  }
+});
+
+test('hello lists the PC\'s addresses, so the phone keeps them current', async () => {
+  const { receiver, api } = await setup();
+  try {
+    const hello = await api('GET', '/v1/hello');
+    assert.deepStrictEqual(hello.body.hosts, ['192.168.1.20']);
+    assert.strictEqual(hello.body.ready, true);
+    assert.strictEqual(hello.body.problem, null);
+  } finally {
+    await receiver.stop();
+  }
+});
+
+test('a finished backup in words, and the command line', () => {
+  assert.strictEqual(backupText({ copied: 1, already: 700, present: 2 }), '1 new photo backed up, 702 already on the PC.');
+  assert.strictEqual(backupText({ copied: 0, errors: 2 }), '0 new photos backed up. 2 problems (see Recent activity).');
+  const bg = parseArgs(['--background', '--page-port', '0']);
+  assert.ok(bg.background && !bg.browser);
+  assert.strictEqual(bg.pagePort, 0);
+  assert.throws(() => parseArgs(['--nope']), /Unknown argument/);
 });
 
 test('keeps its certificate and paired phones across restarts', async () => {
