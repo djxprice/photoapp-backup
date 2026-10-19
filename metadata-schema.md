@@ -13,7 +13,7 @@ The **canonical definition** of PicJot's per-photo metadata file. Code that writ
 A photo has a metadata file when the user expressed something about it (`needsSidecar` in `src/lib/session.js`):
 
 - it has a **caption, tags or a note**, or
-- it is marked **Important** or **Utility** (even with no text).
+- it is marked **Important** or **Timeline** (even with no text). (Until 2026-10-19 also **Utility**.)
 
 Photos that were only skipped, or only left at Normal, have no file. Deleting the photo from the device via the end-of-queue batch delete deletes its file. Free up space keeps the file (the photo is on the PC).
 
@@ -44,6 +44,7 @@ A cleared record has no caption, tags, note or significance. Tagging the photo a
   "note": "First time up the north trail.",
   "significance": "important",
   "skipped": false,
+  "keepOnPhone": false,
   "visibility": "private",
   "createdAt": "2026-10-14T18:02:11.000Z",
   "updatedAt": "2026-10-14T18:05:40.000Z"
@@ -64,22 +65,25 @@ A cleared record has no caption, tags, note or significance. Tagging the photo a
 | `caption` | string | The caption ("What's this moment?"), trimmed. |
 | `tags` | string[] | Tags, trimmed, empty ones removed, in the user's spelling. |
 | `note` | string | Free-text note. |
-| `significance` | `"utility"` \| `"normal"` \| `"important"` | How meaningful the photo is. Drives Revery scoring and the timeline (Important). |
+| `significance` | `"normal"` \| `"important"` \| `"timeline"` | How meaningful the photo is. `important`: a memory worth revisiting. `timeline` (since 2026-10-19): one of the big moments, the photos the timeline is made of; it also counts as Important everywhere (Revisit memories, Free up space). Files written before 2026-10-19 may say `"utility"`: read it, and any unknown value, as `normal`. |
 | `skipped` | boolean | The user marked the photo reviewed without tagging it (the **Skip** button). |
+| `keepOnPhone` | boolean | The user marked the photo **Keep on phone**: the app's Free up space never deletes it from the phone, even once it's backed up. A phone-side wish; PC readers can ignore it. Missing = `false` (files written before 2026-10-19). |
 | `visibility` | `"private"` \| `"family"` \| `"public"` | Who may see it on future shared timelines. Nested: private ⊂ family ⊂ public audiences. Defaults to `private`; the app has no selector yet. |
 | `createdAt` | ISO 8601 UTC \| null | When the photo's metadata was first created. `null` for entries made before stamps existed. |
-| `updatedAt` | ISO 8601 UTC \| null | When the user last changed caption, tags, note, significance or skipped (not bookkeeping). Used by PC↔phone sync to tell which side edited. |
+| `updatedAt` | ISO 8601 UTC \| null | When the user last changed caption, tags, note, significance, skipped or keepOnPhone (not bookkeeping). Used by PC↔phone sync to tell which side edited. |
 
 ## Rules for readers
 
 - Identify photos **only** by `contentHash` (after checking `hashAlgorithm`). Treat `hashSource: "redacted"` hashes as unmatched.
-- Unknown extra fields: ignore. Missing fields: use the defaults (`timelineDate` null, `skipped` false, `visibility` "private", stamps null).
+- Unknown extra fields: ignore. Missing fields: use the defaults (`timelineDate` null, `skipped` false, `keepOnPhone` false, `visibility` "private", stamps null).
 - `"cleared": true` means the user removed all of this photo's tags: delete your copy of them; it carries no metadata of its own.
 - Never write metadata into the image file itself.
 - **Phone copies may have leftover bytes after the record.** Android's folder access doesn't truncate a file it overwrites, so before 2026-10-15 a shorter rewrite (e.g. a cleared record) kept the old file's tail. Read the **first complete JSON object** and ignore anything after it, as `parseLeadingJson` in `pc/lib/plan.js` does. The app now replaces files instead of overwriting them.
 
 ## History
 
+- **`timeline` significance (2026-10-19):** a tier above `important`, replacing `utility` (which the user never used: 0 of 393 tag files). Schema still v2; the app writes an old Utility mark as `normal` when it next saves the photo.
+- **`keepOnPhone` (2026-10-19):** added (schema still v2: an optional field; files are rewritten only when a photo is next saved). Setting it alone doesn't create a file: a photo that's only marked Keep on phone has none.
 - **Cleared records (2026-10-15):** clearing a photo's tags writes `{ ..., "cleared": true, "updatedAt" }` instead of deleting the file (schema still v2; older readers that ignore the field see an empty record).
 - **v2 (2026-10-13):** added `hashSource`, `relativePath`, `timelineDate`, `skipped`, `visibility`, `createdAt`. Files are written for Important/Utility marks even without text. On upgrade the app rewrites every existing file once (tracked as `sidecarSchema` in AsyncStorage).
 - **v1 (2026-08-03):** `version`, `hashAlgorithm`, `contentHash`, `fileName`, `fileSize`, `creationTime`, `caption`, `tags`, `note`, `significance`; `updatedAt` added late in v1.

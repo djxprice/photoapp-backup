@@ -30,8 +30,11 @@ PicJot shows your **newest untagged photos**, 20 at a time (change this in Setti
 - **Caption:** type what the moment was ("What's this moment?").
 - **Tags:** type a tag and press Enter or comma to add it; tap a suggestion to reuse one of your common tags; tap a tag to remove it. **Long-press a suggestion to hide it** from the list (photos keep the tag; Settings → Hidden tag suggestions brings it back).
 - **Same as previous:** copies the caption, tags, note and significance from the previous photo. On the first photo of a new batch, it uses the last ones you entered.
-- **Significance:** **Utility** (receipts, screenshots, reminders), **Normal**, or **Important** (the memories you'll want to find again). Important opens the note.
+- **Significance:** **Normal**, **Important** (the memories you'll want to find again) or **Timeline** (the big moments: they'll make up your timeline, and count as Important everywhere). Important and Timeline open the note.
 - **+ Jot a note:** anything worth remembering: who, why, what happened.
+- **Keep on phone:** tap it for photos you want to keep on the phone (to show people, or to have with you): **Free up space** never deletes them, even once they're backed up.
+
+The photo shows when it was taken (e.g. "Yesterday · 3:42 PM"; photos saved from messages or the web that have no date taken say when they were saved). Tap it for the photo's **details**: the date and time, file name and folder, size, camera and settings, its GPS position as coordinates (if it has one), and whether it's in your PC backup.
 
 Then:
 
@@ -47,7 +50,7 @@ Everything saves as you go. At the end of a batch you can delete the marked phot
 
 ### Elsewhere
 
-- **✦** (top bar): **Revisit memories**: your photos, a few at a time; swipe through them.
+- **✦** (top bar): **Revisit memories**: your photos, a few at a time, with the date and time taken; swipe through them. **ⓘ** (top right) shows the photo's details.
   - **Edit** (top right) opens the same caption, tags, significance and note as the daily review. **Next** saves and moves on; **←** saves and goes back to the memory.
   - **More** (on the last memory) shows the next photos you haven't seen yet. Once you've seen them all, it starts over.
   - **Find** (top right) searches all your tagged and Important photos. Type words from a caption, tag or note (a year such as 2025 works too), or tap a tag, a year and then a month; each shows how many photos it would give. Tap a photo to see the results full screen, then swipe through them. **←** goes back to the list, and again to your memories.
@@ -55,13 +58,13 @@ Everything saves as you go. At the end of a batch you can delete the marked phot
 - **⚙ Settings** (top bar). Changes save as you make them; **←** goes back.
   - **Backup:**
     - **Back up over Wi-Fi:** pair once with your PC (scan the QR code that **PicJot Receiver** shows on the PC), then tap **Back up now** whenever the PC is on: the receiver runs in the background there. Same result as the USB backup: only photos the PC doesn't have are sent, each is checked on the PC, your tags go too, and the receipt Free up space needs comes back. Keep PicJot open while it runs (the screen stays on); **Stop** keeps what was sent. If the PC's network address changes, PicJot finds it again by itself.
-    - **Free up space:** only after a PC backup (below). It shows your last backup and how many photos' tags you've changed since (run **Sync tags** on the PC to copy them; clearing a photo's tags removes them on the PC too). It deletes photos from the phone that the PC backup has verified copies of, keeping the ones you choose: photos you **haven't reviewed yet** (on by default, so they stay for your review), tagged, Utility or Important. Photos taken after the last backup are never touched. **Review N photos** then shows exactly which photos would be deleted; untick any to keep, then **Delete** (Android asks to confirm). Deleted photos skip Samsung's Trash: your PC copy is the backup.
+    - **Free up space:** only after a PC backup (below). It shows your last backup and how many photos' tags you've changed since (run **Sync tags** on the PC to copy them; clearing a photo's tags removes them on the PC too). It deletes photos from the phone that the PC backup has verified copies of, keeping the ones you choose: photos you **haven't reviewed yet** and **Important** ones, Timeline included (both on by default), or all tagged photos. Photos marked **Keep on phone** always stay, and photos taken after the last backup are never touched. **Review N photos** then shows exactly which photos would be deleted; untick any to keep (they're marked Keep on phone, so they aren't offered again), then **Delete** (Android asks to confirm). Deleted photos skip Samsung's Trash: your PC copy is the backup.
     - **Tag folder:** the folder your tag files go to (**Change** to pick another).
   - **Daily review:**
     - **Photos per session:** 10, 20 or 50.
     - **Photo folders** (its own page): which folders feed your review (Camera by default; tick others like Expert RAW if you use them).
     - **Daily reminder:** a notification every day at a time you choose (7:00 PM unless you change it). Optionally skipped on days you've already opened PicJot. Android asks to allow notifications the first time you switch it on.
-  - **Revisit memories:** how many photos per visit (any number from 1 to 999); the order (**Oldest to Newest**, **Newest to Oldest** or **Random**); and which photos (**Important**, **Tagged**, which includes Important, or **All**, which includes untagged photos from your photo folders). And **Each visit**: **Continue** picks up where the last visit left off (no repeats until you've seen them all; changing the order or which photos starts over), **Start fresh** starts from the beginning every time, and **Random** starts each visit at a random point in the order and carries on from there.
+  - **Revisit memories:** how many photos per visit (any number from 1 to 999); the order (**Oldest to Newest**, **Newest to Oldest** or **Random**); and which photos (**Important**, which includes Timeline, **Tagged**, which includes both, or **All**, which includes untagged photos from your photo folders). And **Each visit**: **Continue** picks up where the last visit left off (no repeats until you've seen them all; changing the order or which photos starts over), **Start fresh** starts from the beginning every time, and **Random** starts each visit at a random point in the order and carries on from there.
   - **Hidden tag suggestions** (only when you've hidden some): **Show** puts one back in the suggestions.
   - **About:** the version, and a link to this guide.
 
