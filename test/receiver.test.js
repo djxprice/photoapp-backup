@@ -317,16 +317,33 @@ test('a backup over Wi-Fi: list, send, finish; files filed, tags beside, receipt
     const s = receiver.status();
     assert.ok(!s.busy, 'done');
     assert.strictEqual(s.lastBackup.phone, 'Galaxy S');
-    assert.strictEqual(s.lastBackup.text, '2 new photos backed up.');
+    assert.strictEqual(s.lastBackup.text, '2 new photos backed up. Tags on the PC updated for 1 photo.');
     assert.ok(s.recent.some((r) => /Backup from Galaxy S finished/.test(r.text)));
 
     // Next time: nothing new to send, and the newest receipt still comes back.
+    // A caption edited on the phone still reaches the PC, and the result says
+    // so (no new photos, but the tags changed).
     inv = await api('POST', '/v1/inventory', { token, json: { files } });
     assert.deepStrictEqual(inv.body.need, []);
     assert.strictEqual(inv.body.already, 2);
-    const again = await api('POST', '/v1/finish', { token, json: {} });
+    const edited = { ...tagRecord, caption: 'Lunch by the lake' };
+    const tagJson = (rec) => ({ tagFolder: 'DCIM/photoAppMetadada', tagFiles: [{ name: `${md5(photo1)}.json`, text: JSON.stringify(rec) }] });
+    const again = await api('POST', '/v1/finish', { token, json: tagJson(edited) });
     assert.strictEqual(again.body.summary.copied, 0);
+    assert.strictEqual(again.body.summary.sidecarsWritten, 1);
     assert.strictEqual(again.body.receipt.name, fin.body.receipt.name);
+    assert.strictEqual(
+      receiver.status().lastBackup.text,
+      '0 new photos backed up, 2 already on the PC. Tags on the PC updated for 1 photo.'
+    );
+    assert.match(fs.readFileSync(path.join(to, '2026', '07', '20260720_154654.jpg.json'), 'utf8'), /Lunch by the lake/);
+    // The same tags again: nothing to do, and it says that too.
+    await api('POST', '/v1/inventory', { token, json: { files } });
+    await api('POST', '/v1/finish', { token, json: tagJson(edited) });
+    assert.strictEqual(
+      receiver.status().lastBackup.text,
+      '0 new photos backed up, 2 already on the PC. Tags on the PC already up to date.'
+    );
 
     // A photo missing on the PC is asked for again.
     fs.rmSync(path.join(to, '2025', '03', 'shot.png'));

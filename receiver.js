@@ -43,6 +43,7 @@ const { createCertificate } = require('./lib/cert');
 const { readJson, writeJson } = require('./lib/files');
 const { isImage, isSidecarName } = require('./lib/plan');
 const { createResponder } = require('./lib/mdns');
+const { tagsText } = require('./lib/words');
 const qrcode = require('./lib/vendor/qrcode');
 
 // Its name on its pages and in messages (the tray program uses the same).
@@ -157,6 +158,8 @@ function backupText(b) {
   const onPc = (b.already || 0) + (b.present || 0);
   if (onPc) text += `, ${onPc} already on the PC`;
   text += '.';
+  // What happened to the phone's tags, even when no photo was new.
+  if ('sidecarsWritten' in b) text += ` ${tagsText({ updated: b.sidecarsWritten, removed: b.tagsRemoved })}`;
   if (b.errors) text += ` ${plural(b.errors, 'problem')} (see 'Recent Activity').`;
   return text;
 }
