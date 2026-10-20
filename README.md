@@ -34,7 +34,7 @@ PicJot shows your **newest untagged photos**, 20 at a time (change this in Setti
 - **+ Jot a Note:** anything worth remembering: who, why, what happened.
 - **Keep on Phone** (next to Important and Timeline): tap it for photos you want to keep on the phone (to show people, or to have with you): **Free Up Space** never deletes them, even once they're backed up.
 
-The photo shows when it was taken (e.g. "Yesterday · 3:42 PM"; photos saved from messages or the web that have no date taken say when they were saved). Tap it for the photo's **details**: the date and time, file name and folder, size, camera and settings, its GPS position as coordinates (if it has one) with **Open in Maps** (opens your map app at that spot; the position is only sent when you tap it), and whether it's in your PC backup.
+The photo shows when it was taken (e.g. "Yesterday · 3:42 PM"). When Android has no date for it (often a downloaded photo), PicJot uses the camera's date stored in the photo; one with no date at all (e.g. a saved web image) says when it was saved. Tap it for the photo's **details**: the date and time, file name and folder, size, camera and settings, its GPS position as coordinates (if it has one) with **Open in Maps** (opens your map app at that spot; the position is only sent when you tap it), and whether it's in your PC backup.
 
 Then:
 
@@ -43,7 +43,7 @@ Then:
 | **→** (green, bottom right) | Saves and moves to the next photo. Swiping left/right on the photo also works. |
 | **←** | Saves and goes back to the previous photo. |
 | **Skip** | Marks the photo as reviewed with nothing to add and takes it out of this batch. It won't come back for review. To take a skip back, tap the mustard **⏭ N** badge (top left) and untick the photo: it returns to your review. |
-| 🗑 **Trash** | *Marks* the photo for deletion. Marked photos are deleted **together at the end**, after Android asks you to confirm. Tap the red **🗑 N** badge (top left) to delete them now, or **Review Photos** to see them (newest first) and untick any you want to keep; that's also how you take one back. |
+| 🗑 **Trash** | *Marks* the photo for deletion. Marked photos are deleted **together at the end**, after Android asks you to confirm; if some aren't in your PC or USB stick backup yet, PicJot says so first (**Delete Anyway** or **Keep Marked**). Tap the red **🗑 N** badge (top left) to delete them now, or **Review Photos** to see them (newest first) and untick any you want to keep; that's also how you take one back. |
 | **✓ Done** (top left) | Stop for now: shows what you've reviewed and what's left. **Done for Now** then closes the app. Anything you haven't reviewed comes back next time. |
 
 Everything saves as you go. At the end of a batch you can delete the marked photos, **Continue with Older Photos**, load the **Previous Day** or **Previous Week**, **Choose Photos** yourself, or tap **Done for Now** to close the app.
