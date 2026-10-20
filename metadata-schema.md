@@ -4,7 +4,7 @@ The **canonical definition** of PicJot's per-photo metadata file. Code that writ
 
 ## Where the files live
 
-- **On the phone:** one file per photo, named `<contentHash>.json`, all in the single folder the user granted (e.g. `DCIM/photoAppMetadada`). Not next to the photo: Android's folder access (SAF) only grants one folder.
+- **On the phone:** one file per photo, named `<contentHash>.json`, all in the single folder the user granted (e.g. `DCIM/PicJot Tags`; the developer's was `DCIM/photoAppMetadada` until 2026-10-20). The folder also holds the backup receipts and tags-synced markers. Not next to the photo: Android's folder access (SAF) only grants one folder.
 - **In a backup (the PC's, or a USB stick's since 2026-10-19):** copied beside the photo as `<photo file name>.json` (e.g. `2026/07/20260729_152730.jpg.json`, the Google Takeout convention), plus `"photoFile": "<photo file name>"`. A RAW+JPEG pair (`IMG.jpg` + `IMG.dng`) gets one file each. Before 2026-10-15 the name dropped the photo's extension (`20260729_152730.json`), so such a pair overwrote each other's tags; the backup tool renames old files on its next run.
 - The phone's SQLite database is the source of truth while the app is installed. These files are the durable, portable copy that outlives the app or the phone.
 

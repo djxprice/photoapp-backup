@@ -310,6 +310,13 @@ async function runBackup({
     mostCommonDir([...sidecars.values()].map((s) => s.rel)) ||
     state.sidecarFolder ||
     mostCommonDir(listing.filter((f) => f.kind === 'sidecar').map((f) => f.rel));
+  // Remember it as soon as the phone's tag files are seen there, not only
+  // when a receipt is delivered: Sync tags reads only that folder, and the
+  // app can move its tag files to a new folder (e.g. PicJot Tags, 2026-10-20).
+  if (!from && !dryRun && !tagsOnly && sidecars.size && sidecarFolder !== state.sidecarFolder) {
+    state.sidecarFolder = sidecarFolder;
+    writeJson(stateFile, state);
+  }
 
   // 2) Photos (none in tags-only mode: the listing has tag files only).
   for (const f of toProcess.filter((x) => x.kind === 'image')) {

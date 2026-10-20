@@ -507,3 +507,35 @@ test('a phone tag file with leftover bytes after the record is read correctly', 
   assert.strictEqual(r.tagsRemoved, 1);
   assert.ok(!fs.existsSync(metaFile));
 });
+
+test('a moved tag folder is remembered at the next backup, for Sync tags', async () => {
+  const dest = tmp('dest');
+  const staging = path.join(dest, '.photoapp', 'staging');
+  const photo = Buffer.from('photo-whose-tags-moved');
+  const h = md5(photo);
+  put(dest, '2026/07/a.jpg', photo);
+  put(dest, '.photoapp/index.json', JSON.stringify({
+    version: 1,
+    photos: { [h]: { path: '2026/07/a.jpg', size: photo.length, from: 'DCIM/Camera/a.jpg', tagged: true } },
+  }));
+  // Sync tags last read the old folder; the app has moved the files.
+  put(dest, '.photoapp/receipt-state.json', JSON.stringify({ photoCount: 1, sidecarFolder: 'DCIM/photoAppMetadada' }));
+  const tag = `DCIM/PicJot Tags/${h}.json`;
+  const pull = async () => {
+    put(staging, tag, sidecar(h, { caption: 'moved' }));
+    return {
+      phone: 'Test Phone',
+      errors: [],
+      files: [
+        { rel: 'DCIM/Camera/a.jpg', size: photo.length, modified: '', sig: 's', kind: 'image', already: true, staged: false },
+        { rel: tag, size: 9, modified: '', sig: 'new', kind: 'sidecar', already: false, staged: true },
+      ],
+    };
+  };
+  const r = await runBackup({ to: dest, pull, push: async () => ({ pushed: true, errors: [] }), log: quiet });
+  assert.deepStrictEqual(r.errors, []);
+  assert.strictEqual(r.receiptFile, null, 'nothing new: no receipt');
+  const state = JSON.parse(fs.readFileSync(path.join(dest, '.photoapp', 'receipt-state.json'), 'utf8'));
+  assert.strictEqual(state.sidecarFolder, 'DCIM/PicJot Tags');
+  assert.strictEqual(state.photoCount, 1, 'the rest of the state is kept');
+});
