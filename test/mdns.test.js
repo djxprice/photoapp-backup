@@ -110,6 +110,8 @@ test('responses and malformed packets are ignored', () => {
 
 // The real thing, over the network stack: a plain DNS query sent to the mDNS
 // address from this PC is answered directly. Skipped without a home network.
+// A PicJot Receiver running on the PC (or another on the network) answers
+// too, so only this responder's answer counts.
 test('the responder answers on this PC', { skip: lanInterfaces().length === 0 && 'no home network' }, async () => {
   const responder = createResponder({ pcId: 'TestPc123456', port: 40000 + Math.floor(Math.random() * 1000) });
   const client = dgram.createSocket('udp4');
@@ -119,7 +121,8 @@ test('the responder answers on this PC', { skip: lanInterfaces().length === 0 &&
       const t = setTimeout(() => reject(new Error('no answer within 3 s')), 3000);
       client.on('message', (buf) => {
         const msg = parseMessage(buf);
-        if (msg.id === 777) {
+        const txt = msg.records.find((x) => x.type === TYPE.TXT);
+        if (msg.id === 777 && txt && txt.data.id === 'TestPc123456') {
           clearTimeout(t);
           resolve(msg);
         }
