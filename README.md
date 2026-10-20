@@ -27,9 +27,9 @@ This repository holds the **Android app download**, a **how-to guide**, and the 
 
 PicJot shows your **newest untagged photos**, 20 at a time (change this in Settings). For each photo:
 
+- **Same as Previous** (top right, above the caption): copies the caption, tags, note and mark (Important or Timeline) from the previous photo, for a series of similar photos. On the first photo of a new batch, it uses the last ones you entered.
 - **Caption:** type what the moment was ("What's this moment?").
 - **Tags:** type a tag and press Enter or comma to add it; tap a suggestion to reuse one of your common tags; tap a tag to remove it. **Long-press a suggestion to hide it** from the list (photos keep the tag; 'Settings → Hidden Tag Suggestions' brings it back).
-- **Same as Previous:** copies the caption, tags, note and mark (Important or Timeline) from the previous photo. On the first photo of a new batch, it uses the last ones you entered.
 - **Important** or **Timeline:** tap one to mark the photo, tap it again to clear it. **Important** is for the memories you'll want to find again; **Timeline** for the big moments (they'll make up your timeline, and count as Important everywhere). A photo with neither is Normal. Marking a photo opens the note.
 - **+ Jot a Note:** anything worth remembering: who, why, what happened.
 - **Keep on Phone** (next to Important and Timeline): tap it for photos you want to keep on the phone (to show people, or to have with you): **Free Up Space** never deletes them, even once they're backed up.
