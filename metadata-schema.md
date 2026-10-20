@@ -13,7 +13,7 @@ The **canonical definition** of PicJot's per-photo metadata file. Code that writ
 A photo has a metadata file when the user expressed something about it (`needsSidecar` in `src/lib/session.js`):
 
 - it has a **caption, tags or a note**, or
-- it is marked **Important** or **Timeline** (even with no text). (Until 2026-10-19 also **Utility**.)
+- it is marked **Notable** (called Important until 2026-10-20) or **Timeline** (even with no text). (Until 2026-10-19 also **Utility**.)
 
 Photos that were only skipped, only marked Keep on Phone, or not marked at all, have no file. Deleting the photo from the device via the end-of-queue batch delete deletes its file. Free Up Space keeps the file (the photo is in a backup).
 
@@ -42,7 +42,7 @@ A cleared record has no caption, tags, note or significance. Tagging the photo a
   "caption": "Sunset at the ridge",
   "tags": ["hiking", "summer"],
   "note": "First time up the north trail.",
-  "significance": "important",
+  "significance": "notable",
   "skipped": false,
   "keepOnPhone": false,
   "visibility": "private",
@@ -65,7 +65,7 @@ A cleared record has no caption, tags, note or significance. Tagging the photo a
 | `caption` | string | The caption ("What's this moment?"), trimmed. |
 | `tags` | string[] | Tags, trimmed, empty ones removed, in the user's spelling. |
 | `note` | string | Free-text note. |
-| `significance` | `"important"` \| `"timeline"` \| *absent* | The photo's mark. `important`: a memory worth revisiting. `timeline` (since 2026-10-19): one of the big moments, the photos the timeline is made of; it also counts as Important everywhere (Revisit Memories, Free Up Space). **Absent: not marked** (since 2026-10-20 the field is left out; files written before said `"normal"`, and before 2026-10-19 maybe `"utility"`: read those, and any unknown value, as not marked). |
+| `significance` | `"notable"` \| `"timeline"` \| *absent* | The photo's mark. `notable`: worth noting, more than most photos but not a timeline moment (written `"important"` until 2026-10-20: read that as `notable`). `timeline` (since 2026-10-19): one of the big moments, the photos the timeline is made of; it also counts as Notable everywhere (Revisit Memories, Free Up Space). **Absent: not marked** (since 2026-10-20 the field is left out; files written before said `"normal"`, and before 2026-10-19 maybe `"utility"`: read those, and any unknown value, as not marked). |
 | `skipped` | boolean | The user marked the photo reviewed without tagging it (the **Skip** button). |
 | `keepOnPhone` | boolean | The user marked the photo **Keep on phone**: the app's Free up space never deletes it from the phone, even once it's backed up. A phone-side wish; PC readers can ignore it. Missing = `false` (files written before 2026-10-19). |
 | `visibility` | `"private"` \| `"family"` \| `"public"` | Who may see it on future shared timelines. Nested: private ⊂ family ⊂ public audiences. Defaults to `private`; the app has no selector yet. |
@@ -82,7 +82,8 @@ A cleared record has no caption, tags, note or significance. Tagging the photo a
 
 ## History
 
-- **No `"normal"` (2026-10-20, the user's call):** "not marked" is the absence of `significance`; the app stopped writing `"normal"`, rewrote every tag file on the phone once without it (`withoutNormal`, recorded as `noNormal` in AsyncStorage; `updatedAt` untouched), and the next PC and stick backups carried the cleaned files over; `tools/drop-normal.js` cleans what a backup folder holds beyond that. Schema still v2: readers already treated a missing or unknown value as unmarked. Also from 2026-10-20: `creationTime` uses the photo's EXIF date when Android has no date taken.
+- **`important` renamed `notable` (2026-10-20, the user's call):** Notable is the tier below Timeline ("worth noting"). The app writes `"notable"`, rewrote every phone tag file saying `"important"` once (`withCurrentMark`, recorded as `marksNotable` in AsyncStorage; `updatedAt` untouched), and the next backups carry them over; `tools/update-marks.js` does it for what a backup folder holds beyond that. Readers keep reading `"important"` as `notable`. Schema still v2.
+- **No `"normal"` (2026-10-20, the user's call):** "not marked" is the absence of `significance`; the app stopped writing `"normal"`, rewrote every tag file on the phone once without it (recorded as `noNormal`; `updatedAt` untouched), and the next PC and stick backups carried the cleaned files over; `tools/update-marks.js` (then `drop-normal.js`) cleans what a backup folder holds beyond that. Schema still v2: readers already treated a missing or unknown value as unmarked. Also from 2026-10-20: `creationTime` uses the photo's EXIF date when Android has no date taken.
 
 - **`timeline` significance (2026-10-19):** a tier above `important`, replacing `utility` (which the user never used: 0 of 393 tag files). Schema still v2; the app writes an old Utility mark as `normal` when it next saves the photo.
 - **`keepOnPhone` (2026-10-19):** added (schema still v2: an optional field; files are rewritten only when a photo is next saved). Setting it alone doesn't create a file: a photo that's only marked Keep on phone has none.
