@@ -1,11 +1,11 @@
 # PicJot metadata file (sidecar) — schema v2
 
-The **canonical definition** of PicJot's per-photo metadata file. Code that writes it: `buildSidecar` in `src/lib/sidecar.js` (keep the two in step). Readers: the PC backup tool (`pc/backup.js`), and the future timeline web app and PC↔phone metadata sync.
+The **canonical definition** of PicJot's per-photo metadata file. Code that writes it: `buildSidecar` in `src/lib/sidecar.js` (keep the two in step). Readers: the PC backup tool (`pc/backup.js`), the app's backup to a USB stick (`src/services/stickBackup.js`), and the future timeline web app and PC↔phone metadata sync.
 
 ## Where the files live
 
 - **On the phone:** one file per photo, named `<contentHash>.json`, all in the single folder the user granted (e.g. `DCIM/photoAppMetadada`). Not next to the photo: Android's folder access (SAF) only grants one folder.
-- **On the PC backup:** copied beside the photo as `<photo file name>.json` (e.g. `2026/07/20260729_152730.jpg.json`, the Google Takeout convention), plus `"photoFile": "<photo file name>"`. A RAW+JPEG pair (`IMG.jpg` + `IMG.dng`) gets one file each. Before 2026-10-15 the name dropped the photo's extension (`20260729_152730.json`), so such a pair overwrote each other's tags; the backup tool renames old files on its next run.
+- **In a backup (the PC's, or a USB stick's since 2026-10-19):** copied beside the photo as `<photo file name>.json` (e.g. `2026/07/20260729_152730.jpg.json`, the Google Takeout convention), plus `"photoFile": "<photo file name>"`. A RAW+JPEG pair (`IMG.jpg` + `IMG.dng`) gets one file each. Before 2026-10-15 the name dropped the photo's extension (`20260729_152730.json`), so such a pair overwrote each other's tags; the backup tool renames old files on its next run.
 - The phone's SQLite database is the source of truth while the app is installed. These files are the durable, portable copy that outlives the app or the phone.
 
 ## When a file exists
@@ -15,7 +15,7 @@ A photo has a metadata file when the user expressed something about it (`needsSi
 - it has a **caption, tags or a note**, or
 - it is marked **Important** or **Timeline** (even with no text). (Until 2026-10-19 also **Utility**.)
 
-Photos that were only skipped, or only left at Normal, have no file. Deleting the photo from the device via the end-of-queue batch delete deletes its file. Free up space keeps the file (the photo is on the PC).
+Photos that were only skipped, only marked Keep on Phone, or not marked at all, have no file. Deleting the photo from the device via the end-of-queue batch delete deletes its file. Free Up Space keeps the file (the photo is in a backup).
 
 **Clearing everything from a photo** replaces its file with a **cleared record** (since 2026-10-15), so the PC's *Sync tags* removes its copy of the tags too:
 
@@ -24,7 +24,7 @@ Photos that were only skipped, or only left at Normal, have no file. Deleting th
   "fileName": "20260729_152730.jpg", "cleared": true, "updatedAt": "2026-10-15T09:00:00.000Z" }
 ```
 
-A cleared record has no caption, tags, note or significance. Tagging the photo again overwrites it with a normal record. Readers must **only** remove tags on an explicit `"cleared": true`. A missing file never means "cleared": the photo may have been deleted, or a listing may be incomplete.
+A cleared record has no caption, tags, note or significance. Tagging the photo again overwrites it with a regular record. Readers must **only** remove tags on an explicit `"cleared": true`. A missing file never means "cleared": the photo may have been deleted, or a listing may be incomplete.
 
 ## Fields
 
@@ -60,12 +60,12 @@ A cleared record has no caption, tags, note or significance. Tagging the photo a
 | `fileName` | string | Original file name on the phone. A hint, never a key. |
 | `fileSize` | number \| null | Bytes. Lets a reader shortlist candidates by size before hashing. |
 | `relativePath` | string \| null | The photo's folder on the phone, relative to shared storage (e.g. `DCIM/Camera`, `Pictures/Messages`). With `fileName` + `fileSize` it lets a restore find candidates quickly, then confirm by hash. |
-| `creationTime` | ISO 8601 UTC \| null | When the photo was taken (the phone's media date). |
+| `creationTime` | ISO 8601 UTC \| null | When the photo was taken: Android's date taken; when Android has none (it leaves it unset for an EXIF date without a time zone, e.g. a downloaded photo), the photo's own EXIF date (since 2026-10-20; read in the phone's time zone when it records none); with no EXIF date either, when the file was saved. |
 | `timelineDate` | `YYYY-MM-DD` \| ISO \| null | User override for where the photo belongs in time (e.g. a scan of a 1987 print). **Readers use `timelineDate ?? creationTime`.** Not set by the app yet. |
 | `caption` | string | The caption ("What's this moment?"), trimmed. |
 | `tags` | string[] | Tags, trimmed, empty ones removed, in the user's spelling. |
 | `note` | string | Free-text note. |
-| `significance` | `"normal"` \| `"important"` \| `"timeline"` | How meaningful the photo is. `important`: a memory worth revisiting. `timeline` (since 2026-10-19): one of the big moments, the photos the timeline is made of; it also counts as Important everywhere (Revisit memories, Free up space). Files written before 2026-10-19 may say `"utility"`: read it, and any unknown value, as `normal`. |
+| `significance` | `"important"` \| `"timeline"` \| *absent* | The photo's mark. `important`: a memory worth revisiting. `timeline` (since 2026-10-19): one of the big moments, the photos the timeline is made of; it also counts as Important everywhere (Revisit Memories, Free Up Space). **Absent: not marked** (since 2026-10-20 the field is left out; files written before said `"normal"`, and before 2026-10-19 maybe `"utility"`: read those, and any unknown value, as not marked). |
 | `skipped` | boolean | The user marked the photo reviewed without tagging it (the **Skip** button). |
 | `keepOnPhone` | boolean | The user marked the photo **Keep on phone**: the app's Free up space never deletes it from the phone, even once it's backed up. A phone-side wish; PC readers can ignore it. Missing = `false` (files written before 2026-10-19). |
 | `visibility` | `"private"` \| `"family"` \| `"public"` | Who may see it on future shared timelines. Nested: private ⊂ family ⊂ public audiences. Defaults to `private`; the app has no selector yet. |
@@ -75,12 +75,14 @@ A cleared record has no caption, tags, note or significance. Tagging the photo a
 ## Rules for readers
 
 - Identify photos **only** by `contentHash` (after checking `hashAlgorithm`). Treat `hashSource: "redacted"` hashes as unmatched.
-- Unknown extra fields: ignore. Missing fields: use the defaults (`timelineDate` null, `skipped` false, `keepOnPhone` false, `visibility` "private", stamps null).
+- Unknown extra fields: ignore. Missing fields: use the defaults (`significance` not marked, `timelineDate` null, `skipped` false, `keepOnPhone` false, `visibility` "private", stamps null).
 - `"cleared": true` means the user removed all of this photo's tags: delete your copy of them; it carries no metadata of its own.
 - Never write metadata into the image file itself.
 - **Phone copies may have leftover bytes after the record.** Android's folder access doesn't truncate a file it overwrites, so before 2026-10-15 a shorter rewrite (e.g. a cleared record) kept the old file's tail. Read the **first complete JSON object** and ignore anything after it, as `parseLeadingJson` in `pc/lib/plan.js` does. The app now replaces files instead of overwriting them.
 
 ## History
+
+- **No `"normal"` (2026-10-20, the user's call):** "not marked" is the absence of `significance`; the app stopped writing `"normal"`, rewrote every tag file on the phone once without it (`withoutNormal`, recorded as `noNormal` in AsyncStorage; `updatedAt` untouched), and the next PC and stick backups carried the cleaned files over; `tools/drop-normal.js` cleans what a backup folder holds beyond that. Schema still v2: readers already treated a missing or unknown value as unmarked. Also from 2026-10-20: `creationTime` uses the photo's EXIF date when Android has no date taken.
 
 - **`timeline` significance (2026-10-19):** a tier above `important`, replacing `utility` (which the user never used: 0 of 393 tag files). Schema still v2; the app writes an old Utility mark as `normal` when it next saves the photo.
 - **`keepOnPhone` (2026-10-19):** added (schema still v2: an optional field; files are rewritten only when a photo is next saved). Setting it alone doesn't create a file: a photo that's only marked Keep on phone has none.
