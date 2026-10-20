@@ -1,18 +1,23 @@
-// PicJot Receiver: the Wi-Fi receiver's icon by the clock (roadmap Step 33,
-// stage 2; docs/wifi-backup.md). It runs `node receiver.js --background`
-// hidden, shows the receiver's state, keeps the PC awake while a phone backs
-// up, and starts with Windows when asked (HKCU Run key).
+// PicJot WiFi Backup Manager (called PicJot Receiver until 2026-10-20): the
+// Wi-Fi receiver's icon by the clock (roadmap Step 33, stage 2;
+// docs/wifi-backup.md). It runs `node receiver.js --background` hidden, shows
+// the receiver's state, keeps the PC awake while a phone backs up, and starts
+// with Windows when asked (HKCU Run key).
 //
 // Built on the user's PC by receiver-tray.ps1 with the C# compiler that comes
 // with Windows (.NET Framework 4), so it needs no download and, being a
 // Windows program rather than a script, opens no console window at login.
 // That compiler only knows C# 5: no $"..." strings, no ?. operator.
 //
-//   "PicJot Receiver.exe"          start (or, if running, open its page); the
-//                                  first start on a PC also turns on Start
-//                                  with Windows (%APPDATA%\PhotoApp\receiver-tray.json
-//                                  remembers that it happened)
-//   "PicJot Receiver.exe" --quit   ask the running one to quit
+//   "PicJot WiFi Backup Manager.exe"          start (or, if running, open its
+//                                             page); the first start on a PC
+//                                             also turns on Start with Windows
+//                                             (%APPDATA%\PhotoApp\receiver-tray.json
+//                                             remembers that it happened)
+//   "PicJot WiFi Backup Manager.exe" --quit   ask the running one to quit
+//
+// The mutex and quit event keep their old names, so this program and the old
+// "PicJot Receiver.exe" can stop each other.
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -67,8 +72,10 @@ class Tray
     public const string StatusUrl = "http://127.0.0.1:47824/";
     const string PairUrl = StatusUrl + "pair";
     const string ApiUrl = StatusUrl + "api/status";
+    public const string AppName = "PicJot WiFi Backup Manager";
     const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    const string RunName = "PicJot Receiver";
+    const string RunName = AppName;
+    const string OldRunName = "PicJot Receiver"; // its Start with Windows entry until 2026-10-20
     const int ExitPortInUse = 3;
 
     [DllImport("kernel32.dll")]
@@ -99,13 +106,13 @@ class Tray
     {
         if (!File.Exists(Path.Combine(dir, "receiver.js")))
         {
-            MessageBox.Show("receiver.js is missing from " + dir + ". Keep PicJot Receiver in the PicJot Backup folder.", "PicJot Receiver", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show("receiver.js is missing from " + dir + ". Keep " + AppName + " in the PicJot Backup folder.", AppName, MessageBoxButtons.OK, MessageBoxIcon.Error);
             return false;
         }
         nodePath = FindNode();
         if (nodePath == null)
         {
-            if (MessageBox.Show("PicJot Receiver needs Node.js. Install the LTS version from nodejs.org, then open PicJot Receiver again.\n\nOpen nodejs.org now?", "PicJot Receiver", MessageBoxButtons.YesNo, MessageBoxIcon.Information) == DialogResult.Yes)
+            if (MessageBox.Show(AppName + " needs Node.js. Install the LTS version from nodejs.org, then open " + AppName + " again.\n\nOpen nodejs.org now?", AppName, MessageBoxButtons.YesNo, MessageBoxIcon.Information) == DialogResult.Yes)
                 OpenUrl("https://nodejs.org");
             return false;
         }
@@ -114,7 +121,7 @@ class Tray
             string picked = PickFolder(null);
             if (picked == null)
             {
-                MessageBox.Show("No backup folder chosen, so PicJot Receiver didn't start. Open it again to choose one.", "PicJot Receiver", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show("No backup folder chosen, so " + AppName + " didn't start. Open it again to choose one.", AppName, MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return false;
             }
             SaveFolder(picked);
@@ -144,10 +151,11 @@ class Tray
             }
             catch (Exception e) { Note("Couldn't save receiver-tray.json: " + e.Message); }
         }
-        else if (IsStartWithWindows()) SetStartWithWindows(true); // the program may have moved
+        // The program may have moved, or been renamed (the old entry goes).
+        else if (IsStartWithWindows()) SetStartWithWindows(true);
         startItem.Checked = IsStartWithWindows();
         if (firstRun)
-            icon.ShowBalloonTip(8000, "PicJot Receiver is running", "Your phone can now back up over Wi-Fi whenever this PC is on. It starts with Windows; right-click this icon for options.", ToolTipIcon.Info);
+            icon.ShowBalloonTip(8000, AppName + " is running", "Your phone can now back up over Wi-Fi whenever this PC is on. It starts with Windows; right-click this icon for options.", ToolTipIcon.Info);
 
         SystemEvents.SessionEnding += delegate { StopNode(2000); };
         timer.Interval = 3000;
@@ -159,12 +167,12 @@ class Tray
     void BuildIcon()
     {
         ContextMenuStrip menu = new ContextMenuStrip();
-        ToolStripMenuItem open = new ToolStripMenuItem("Open PicJot Receiver", null, delegate { OpenUrl(StatusUrl); });
+        ToolStripMenuItem open = new ToolStripMenuItem("Open " + AppName, null, delegate { OpenUrl(StatusUrl); });
         open.Font = new Font(open.Font, FontStyle.Bold);
         menu.Items.Add(open);
-        menu.Items.Add(new ToolStripMenuItem("Pair a phone", null, delegate { OpenUrl(PairUrl); }));
+        menu.Items.Add(new ToolStripMenuItem("Pair a Phone", null, delegate { OpenUrl(PairUrl); }));
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(new ToolStripMenuItem("Change backup folder...", null, delegate { ChangeFolder(); }));
+        menu.Items.Add(new ToolStripMenuItem("Change Backup Folder...", null, delegate { ChangeFolder(); }));
         startItem = new ToolStripMenuItem("Start with Windows");
         startItem.CheckOnClick = true;
         startItem.Click += delegate { SetStartWithWindows(startItem.Checked); };
@@ -174,7 +182,7 @@ class Tray
 
         icon = new NotifyIcon();
         icon.Icon = LoadIcon();
-        icon.Text = "PicJot Receiver: starting";
+        icon.Text = AppName + ": starting";
         icon.ContextMenuStrip = menu;
         icon.MouseClick += delegate (object s, MouseEventArgs e) { if (e.Button == MouseButtons.Left) OpenUrl(StatusUrl); };
         icon.Visible = true;
@@ -219,7 +227,7 @@ class Tray
             Note("Couldn't start node: " + e.Message);
             node = null;
             stopped = true;
-            SetText("PicJot Receiver: stopped");
+            SetText(AppName + ": stopped");
         }
     }
 
@@ -260,8 +268,8 @@ class Tray
         if (code == ExitPortInUse)
         {
             stopped = true;
-            SetText("PicJot Receiver: not running");
-            icon.ShowBalloonTip(10000, "PicJot Receiver couldn't start", "Its network port is in use: another PicJot Receiver may be running in a window. Close that window, then open PicJot Receiver again.", ToolTipIcon.Warning);
+            SetText(AppName + ": not running");
+            icon.ShowBalloonTip(10000, AppName + " couldn't start", "Its network port is in use: another copy may be running in a window. Close that window, then open " + AppName + " again.", ToolTipIcon.Warning);
             return;
         }
         // Start it again, at most 3 times in 10 minutes.
@@ -274,8 +282,8 @@ class Tray
             return;
         }
         stopped = true;
-        SetText("PicJot Receiver: stopped");
-        icon.ShowBalloonTip(10000, "PicJot Receiver stopped", "It stopped unexpectedly. Quit it and open PicJot Receiver again; its log is in %APPDATA%\\PhotoApp\\receiver.log.", ToolTipIcon.Warning);
+        SetText(AppName + ": stopped");
+        icon.ShowBalloonTip(10000, AppName + " stopped", "It stopped unexpectedly. 'Quit' it and open " + AppName + " again; its log is in %APPDATA%\\PhotoApp\\receiver.log.", ToolTipIcon.Warning);
     }
 
     // ── Every 3 seconds: the receiver's state ──
@@ -284,7 +292,7 @@ class Tray
         if (quitting || stopped) return;
         if (node == null || node.HasExited) { NodeExited(); return; }
         Dictionary<string, object> s = FetchStatus();
-        if (s == null) { SetText("PicJot Receiver: starting"); return; }
+        if (s == null) { SetText(AppName + ": starting"); return; }
 
         bool busy = Bool(s, "busy");
         string problem = Str(s, "problem");
@@ -292,10 +300,10 @@ class Tray
         if (busy)
         {
             string phone = Str(s, "phone");
-            SetText("PicJot Receiver: backing up" + (phone != null ? " " + phone : ""));
+            SetText(AppName + ": backing up" + (phone != null ? " " + phone : ""));
         }
-        else if (problem != null) SetText("PicJot Receiver: " + problem);
-        else SetText("PicJot Receiver: ready");
+        else if (problem != null) SetText(AppName + ": " + problem);
+        else SetText(AppName + ": ready");
 
         Dictionary<string, object> last = s.ContainsKey("lastBackup") ? s["lastBackup"] as Dictionary<string, object> : null;
         string at = last != null ? Str(last, "at") : null;
@@ -307,7 +315,7 @@ class Tray
             seenBackupAt = at;
             seenProblem = problem;
             if (Int(s, "phoneCount") == 0 && !pairShown) { pairShown = true; OpenUrl(PairUrl); }
-            if (problem != null) icon.ShowBalloonTip(10000, "PicJot Receiver", problem, ToolTipIcon.Warning);
+            if (problem != null) icon.ShowBalloonTip(10000, AppName, problem, ToolTipIcon.Warning);
             return;
         }
         if (at != null && at != seenBackupAt)
@@ -317,7 +325,7 @@ class Tray
             icon.ShowBalloonTip(8000, "Backup finished" + (phone != null ? ": " + phone : ""), Str(last, "text") ?? "", ToolTipIcon.Info);
         }
         if (problem != null && problem != seenProblem)
-            icon.ShowBalloonTip(10000, "PicJot Receiver", problem, ToolTipIcon.Warning);
+            icon.ShowBalloonTip(10000, AppName, problem, ToolTipIcon.Warning);
         seenProblem = problem;
     }
 
@@ -425,11 +433,11 @@ class Tray
         icon.ShowBalloonTip(5000, "Backup folder changed", "Backups now go to " + picked + ".", ToolTipIcon.Info);
     }
 
-    // ── Start with Windows ──
+    // ── Start with Windows (an entry under the old name counts, and is replaced) ──
     static bool IsStartWithWindows()
     {
         using (RegistryKey k = Registry.CurrentUser.OpenSubKey(RunKey))
-            return k != null && k.GetValue(RunName) != null;
+            return k != null && (k.GetValue(RunName) != null || k.GetValue(OldRunName) != null);
     }
 
     static void SetStartWithWindows(bool on)
@@ -438,6 +446,7 @@ class Tray
         {
             if (on) k.SetValue(RunName, "\"" + Application.ExecutablePath + "\"");
             else k.DeleteValue(RunName, false);
+            k.DeleteValue(OldRunName, false);
         }
     }
 

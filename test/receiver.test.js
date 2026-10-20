@@ -136,7 +136,8 @@ test('pairing: one-time code, then a token; the QR text carries the pin', async 
     const statusPage = await getPage(pageUrl);
     assert.strictEqual(statusPage.status, 200);
     assert.match(statusPage.text, /Galaxy/);
-    assert.match(statusPage.text, /Pair a phone/);
+    assert.match(statusPage.text, /Pair a Phone/);
+    assert.match(statusPage.text, /<title>PicJot WiFi Backup Manager<\/title>/);
   } finally {
     await receiver.stop();
   }
@@ -275,6 +276,9 @@ test('a backup over Wi-Fi: list, send, finish; files filed, tags beside, receipt
     assert.deepStrictEqual(inv.body.need.sort(), [rel1, rel2].sort(), 'only valid photo paths');
     assert.ok(receiver.status().busy, 'backing up (the tray keeps the PC awake)');
     assert.strictEqual(receiver.status().phone, 'Galaxy S');
+    // Paired as "Galaxy": the status page now lists the name the phone gives.
+    assert.deepStrictEqual(receiver.status().phones.map((p) => p.name), ['Galaxy S']);
+    assert.strictEqual(inv.body.folder, path.resolve(to), 'the backup folder, for the phone');
 
     const put = (rel, bytes, extra) => api('PUT', `/v1/file?rel=${encodeURIComponent(rel)}`, { token, bytes, ...extra });
     assert.strictEqual((await put('DCIM/Camera/other.jpg', photo1)).status, 409, 'not listed');
@@ -379,7 +383,7 @@ test('hello lists the PC\'s addresses, so the phone keeps them current', async (
 
 test('a finished backup in words, and the command line', () => {
   assert.strictEqual(backupText({ copied: 1, already: 700, present: 2 }), '1 new photo backed up, 702 already on the PC.');
-  assert.strictEqual(backupText({ copied: 0, errors: 2 }), '0 new photos backed up. 2 problems (see Recent activity).');
+  assert.strictEqual(backupText({ copied: 0, errors: 2 }), "0 new photos backed up. 2 problems (see 'Recent Activity').");
   const bg = parseArgs(['--background', '--page-port', '0']);
   assert.ok(bg.background && !bg.browser);
   assert.strictEqual(bg.pagePort, 0);

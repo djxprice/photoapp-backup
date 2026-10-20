@@ -1,24 +1,29 @@
 <#
-  PicJot Receiver - double-click launcher (started by "PicJot Receiver.cmd").
+  PicJot WiFi Backup Manager - double-click launcher (started by
+  "PicJot WiFi Backup Manager.cmd"). Called PicJot Receiver until 2026-10-20.
 
-  Builds "PicJot Receiver.exe" beside this script the first time (and after
-  an update) from tray\PicJotReceiver.cs, with the C# compiler that comes
-  with Windows, then starts it: the receiver runs in the background with an
-  icon by the clock (docs/wifi-backup.md, stage 2). If it's already running
+  Builds "PicJot WiFi Backup Manager.exe" beside this script the first time
+  (and after an update) from tray\PicJotReceiver.cs, with the C# compiler that
+  comes with Windows, then starts it: the receiver runs in the background with
+  an icon by the clock (docs/wifi-backup.md, stage 2). If it's already running
   from here, its status page opens instead. If the program can't be built,
-  the receiver runs in this window as before.
+  the receiver runs in this window as before. A running "PicJot Receiver.exe"
+  (the old name) is stopped and its file removed; the new program moves its
+  Start with Windows entry over.
 
   Automation/testing:  receiver-tray.ps1 -BuildOnly
 #>
 param([switch]$BuildOnly)
 
 $ErrorActionPreference = 'Stop'
-try { $Host.UI.RawUI.WindowTitle = 'PicJot Receiver' } catch {}
+$name = 'PicJot WiFi Backup Manager'
+try { $Host.UI.RawUI.WindowTitle = $name } catch {}
 
 $here = $PSScriptRoot
 $cs = Join-Path $here 'tray\PicJotReceiver.cs'
 $ico = Join-Path $here 'tray\picjot.ico'
-$exe = Join-Path $here 'PicJot Receiver.exe'
+$exe = Join-Path $here "$name.exe"
+$oldExe = Join-Path $here 'PicJot Receiver.exe' # the name until 2026-10-20
 
 function Fail([string]$text) {
   Write-Host $text -ForegroundColor Red
@@ -50,7 +55,7 @@ function Is-Stale {
 function Build {
   $csc = Join-Path ([Runtime.InteropServices.RuntimeEnvironment]::GetRuntimeDirectory()) 'csc.exe'
   if (-not (Test-Path -LiteralPath $csc)) { return "Windows' C# compiler wasn't found ($csc)." }
-  $new = Join-Path $here 'PicJot Receiver.new.exe'
+  $new = Join-Path $here "$name.new.exe"
   Remove-Item -LiteralPath $new -Force -ErrorAction SilentlyContinue
   $out = & $csc /nologo /target:winexe /optimize+ "/out:$new" "/win32icon:$ico" "/resource:$ico,PicJot.ico" `
     /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Web.Extensions.dll $cs 2>&1
@@ -68,11 +73,11 @@ function Build {
 }
 
 $stale = Is-Stale
-$running = @(Get-Process -Name 'PicJot Receiver' -ErrorAction SilentlyContinue)
+$running = @(Get-Process -Name $name, 'PicJot Receiver' -ErrorAction SilentlyContinue)
 $runningHere = @($running | Where-Object { $_.Path -eq $exe })
 
 if ($BuildOnly) {
-  if ($running.Count) { Fail 'PicJot Receiver is running: quit it first (right-click its icon), or run this without -BuildOnly to restart it.' }
+  if ($running.Count) { Fail "$name is running: quit it first (right-click its icon), or run this without -BuildOnly to restart it." }
   $problem = Build
   if ($problem) { Fail $problem }
   Write-Output "Built $exe"
@@ -88,16 +93,22 @@ if ($running.Count -and $runningHere.Count -eq $running.Count -and -not $stale) 
 # An older copy, or one from another folder: ask it to quit first (it
 # finishes filing a backup before it goes).
 if ($running.Count) {
-  Write-Host 'Stopping the PicJot Receiver that is running now...'
+  Write-Host "Stopping the $name that is running now..."
+  # The quit event keeps its old name, so the old program hears it too.
   try { [Threading.EventWaitHandle]::OpenExisting('Local\PicJotReceiverQuit').Set() | Out-Null } catch {}
   $running | Wait-Process -Timeout 900 -ErrorAction SilentlyContinue
 }
 
+# The program under its old name is no longer used.
+foreach ($f in @($oldExe, (Join-Path $here 'PicJot Receiver.new.exe'))) {
+  if (Test-Path -LiteralPath $f) { Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue }
+}
+
 if ($stale) {
-  Write-Host 'Setting up PicJot Receiver...'
+  Write-Host "Setting up $name..."
   $problem = Build
   if ($problem) {
-    Write-Host 'PicJot Receiver could not be set up:' -ForegroundColor Yellow
+    Write-Host "$name could not be set up:" -ForegroundColor Yellow
     Write-Host "  $problem"
     # An older build still works; without one, the receiver runs in this window.
     if (-not (Test-Path -LiteralPath $exe)) { Run-InWindow }
@@ -109,6 +120,6 @@ if ($stale) {
 # turns it off).
 Start-Process -FilePath $exe
 Write-Host ''
-Write-Host 'PicJot Receiver is running in the background: its icon is by the clock' -ForegroundColor Green
+Write-Host "$name is running in the background: its icon is by the clock" -ForegroundColor Green
 Write-Host '(click ^ if you do not see it). Right-click the icon for options.'
 Start-Sleep -Seconds 4

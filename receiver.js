@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 'use strict';
 /*
-  PicJot Wi-Fi receiver (roadmap Step 33; design in docs/wifi-backup.md).
+  PicJot Wi-Fi receiver, shown as "PicJot WiFi Backup Manager" (called PicJot
+  Receiver until 2026-10-20; roadmap Step 33; design in docs/wifi-backup.md).
 
     node pc/receiver.js                 # in this window; backs up to the folder the USB backup uses
     node pc/receiver.js --background    # for the tray icon (pc/tray): no browser, a log file,
@@ -44,6 +45,8 @@ const { isImage, isSidecarName } = require('./lib/plan');
 const { createResponder } = require('./lib/mdns');
 const qrcode = require('./lib/vendor/qrcode');
 
+// Its name on its pages and in messages (the tray program uses the same).
+const APP_NAME = 'PicJot WiFi Backup Manager';
 const PROTOCOL = 1;
 const DEFAULT_PORT = 47823;
 const DEFAULT_PAGE_PORT = 47824;
@@ -154,7 +157,7 @@ function backupText(b) {
   const onPc = (b.already || 0) + (b.present || 0);
   if (onPc) text += `, ${onPc} already on the PC`;
   text += '.';
-  if (b.errors) text += ` ${plural(b.errors, 'problem')} (see Recent activity).`;
+  if (b.errors) text += ` ${plural(b.errors, 'problem')} (see 'Recent Activity').`;
   return text;
 }
 
@@ -207,7 +210,7 @@ function createReceiver({
   };
   // Why backups can't run right now, in words for the phone; null when they can.
   function folderProblem(d = destination()) {
-    if (!d) return 'No backup folder is chosen on the PC yet (PicJot Receiver icon → Change backup folder).';
+    if (!d) return `No backup folder is chosen on the PC yet ('${APP_NAME}' icon → 'Change Backup Folder').`;
     if (!fs.existsSync(path.parse(d).root)) {
       return `The backup folder ${d} isn't available: is the backup drive connected to the PC?`;
     }
@@ -367,10 +370,17 @@ function createReceiver({
       if (!x.already && stagedSize(f, x.rel) !== x.size) need.push(x.rel);
     }
     const phone = String((body && body.phone) || config.phones[phoneId].name).slice(0, 80);
+    // The phone's name as it says now (e.g. its own name was added: "DJP S23
+    // (Samsung SM-S911U)"), so the status page lists it as the phone does.
+    if (body && body.phone && phone !== config.phones[phoneId].name) {
+      config.phones[phoneId].name = phone;
+      saveConfig();
+    }
     writeJson(f.sessionFile, { phoneId, phone, startedAt: now().toISOString(), files });
     active = { phoneId, phone, lastAt: now().getTime() };
     if (need.length) say(`${phone} is backing up: ${plural(need.length, 'photo')} to receive.`);
-    return { need, total: files.length, already: files.filter((x) => x.already).length };
+    // The backup folder, for the phone's Settings ("PC > folder").
+    return { need, total: files.length, already: files.filter((x) => x.already).length, folder: f.to };
   }
 
   async function receiveFile(phoneId, req, url) {
@@ -603,21 +613,21 @@ form.inline{display:inline;margin-left:8px}form.inline button{background:none;bo
       ? `<ul class="log">${s.recent.map((r) => `<li><span>${esc(when(r.at))}</span>${esc(r.text)}</li>`).join('')}</ul>`
       : '<p class="muted">Nothing yet.</p>';
     const footer = background
-      ? 'PicJot Receiver runs in the background. Right-click its icon by the clock to pair a phone, change the backup folder, start it with Windows, or quit. Its log: %APPDATA%\\PhotoApp\\receiver.log.'
+      ? `${APP_NAME} runs in the background. Right-click its icon by the clock for 'Pair a Phone', 'Change Backup Folder', 'Start with Windows' or 'Quit'. Its log: %APPDATA%\\PhotoApp\\receiver.log.`
       : 'Running in a window: close the window to stop the receiver.';
     return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="10">
-<title>PicJot Receiver</title><style>${STYLE}</style></head><body>
-<h1>PicJot Receiver</h1>
+<title>${APP_NAME}</title><style>${STYLE}</style></head><body>
+<h1>${APP_NAME}</h1>
 ${state}
 <dl>
 <dt>This PC</dt><dd>${esc(s.pcName)} (${esc(s.addresses.join(', ') || 'no network found')}), port ${s.port}</dd>
-<dt>Backup folder</dt><dd>${esc(s.folder || 'not chosen yet')}</dd>
-<dt>Last backup</dt><dd>${last}</dd>
+<dt>Backup Folder</dt><dd>${esc(s.folder || 'not chosen yet')}</dd>
+<dt>Last Backup</dt><dd>${last}</dd>
 </dl>
 <h2>Phones</h2>
 ${phones}
-<a class="button" href="/pair">Pair a phone</a>
-<h2>Recent activity</h2>
+<a class="button" href="/pair">Pair a Phone</a>
+<h2>Recent Activity</h2>
 ${log}
 <p class="muted" style="margin-top:28px">${esc(footer)}</p>
 </body></html>`;
@@ -630,10 +640,10 @@ ${log}
     const phones = Object.values(config.phones).map((p) => p.name);
     const addrs = addresses();
     return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="60">
-<title>Pair a phone · PicJot Receiver</title><style>${STYLE}</style></head><body>
-<p><a href="/">← PicJot Receiver</a></p>
-<h1>Pair a phone with PicJot</h1>
-<p>In PicJot on the phone: <b>Settings → Backup → Back up over Wi-Fi → Pair with PC</b>, then scan this code.</p>
+<title>Pair a Phone · ${APP_NAME}</title><style>${STYLE}</style></head><body>
+<p><a href="/">← ${APP_NAME}</a></p>
+<h1>Pair a Phone with PicJot</h1>
+<p>In PicJot on the phone: <b>'Settings → Backup → Back Up over Wi-Fi → Pair with PC'</b>, then scan this code.</p>
 <div class="qr">${qr.createSvgTag({ cellSize: 6, margin: 2 })}</div>
 <p class="muted">This PC: ${esc(pcName)} (${esc(addrs.join(', ') || 'no network found')}), port ${listeningPort()}.<br>
 Backups go to ${esc(destination() || 'a folder not chosen yet')}.<br>The code works once and expires after 10 minutes; this page refreshes itself.</p>
@@ -823,7 +833,7 @@ if (require.main === module) {
       started = await receiver.start({ pagePort: args.pagePort });
     } catch (e) {
       if (e && e.code === 'EADDRINUSE') {
-        log(`Port ${e.port} is already in use: PicJot Receiver may already be running (look for its icon by the clock).`);
+        log(`Port ${e.port} is already in use: ${APP_NAME} may already be running (look for its icon by the clock).`);
         process.exitCode = 3;
         return;
       }
@@ -831,7 +841,7 @@ if (require.main === module) {
     }
     const { port, pageUrl } = started;
     // Plain ASCII: the Windows console mangles typographic characters.
-    log(`PicJot receiver is running on ${os.hostname()} (${localAddresses().join(', ') || 'no network'}), port ${port}.`);
+    log(`${APP_NAME} is running on ${os.hostname()} (${localAddresses().join(', ') || 'no network'}), port ${port}.`);
     log(`Backups go to ${(typeof to === 'function' ? to() : to) || '(no folder chosen yet)'}. Status page: ${pageUrl}`);
     if (!args.background) {
       console.log(

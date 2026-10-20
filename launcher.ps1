@@ -110,9 +110,9 @@ while (-not (Test-Path -LiteralPath ([IO.Path]::GetPathRoot($dest)))) {
 $tags = [bool]$TagsOnly
 if (-not $Yes -and -not $firstRun -and -not $Destination) {
   Write-Host "Backup folder: $dest"
-  Write-Host '  Enter = back up photos and tags'
-  Write-Host '  S     = sync tags only (quick: copies tag changes made on the phone)'
-  Write-Host '  C     = choose a different folder'
+  Write-Host '  Enter = Back Up Photos and Tags'
+  Write-Host '  S     = Sync Tags Only (quick: copies tag changes made on the phone)'
+  Write-Host '  C     = Choose a Different Folder'
   $answer = Read-Host 'Your choice'
   if ($answer -match '^c') {
     $picked = Pick-Folder $dest
