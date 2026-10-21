@@ -4,7 +4,7 @@
 
 **PicJot** (formerly PhotoApp) is a local-first Android app for capturing the story behind your photos: a quick daily review of new photos with a caption, tags and a note, marking the ones that matter **Notable** or **Timeline**, plus 'Revisit Memories' to resurface them. No cloud: your photos and tags stay on your phone, your own PC, or a USB stick.
 
-This repository holds the **Android app download**, a **how-to guide**, and the **PC backup tool** (Windows; ⚠️ **requires [Node.js](https://nodejs.org)**, see [section 3](#3-pc-backup-tool-windows)). No PC? The app can also **back up to a USB stick** plugged into the phone ('Settings → Backup').
+This repository holds the **Android app download**, a **how-to guide**, and the **PC backup tool**: PicJot WiFi Backup Manager for Windows, a one-file installer (see [section 3](#3-pc-backup-windows)). No PC? The app can also **back up to a USB stick** plugged into the phone ('Settings → Backup').
 
 ---
 
@@ -69,9 +69,28 @@ Everything saves as you go. At the end of a batch you can delete the marked phot
   - **Hidden Tag Suggestions** (only when you've hidden some): **Show** puts one back in the suggestions.
   - **About:** the version, and a link to this guide.
 
-## 3. PC backup tool (Windows)
+## 3. PC backup (Windows)
 
-**[⬇ Download the backup tool (zip)](https://github.com/djxprice/photoapp-backup/archive/refs/heads/main.zip)**
+**[⬇ Download PicJot WiFi Backup Manager (installer, about 23 MB)](https://github.com/djxprice/photoapp-backup/releases/latest/download/PicJotSetup.exe)** for Windows 10 and 11. Nothing else to install.
+
+Backs up **all photos** from your phone to a folder or drive on your PC over your home Wi-Fi, filed by month (`YYYY/MM/`), with PicJot's tags and notes saved beside each tagged photo (e.g. `IMG_1234.jpg` + `IMG_1234.jpg.json`). Every copy is verified by content hash, later backups only send what's new, and it **never deletes anything from your phone**. It leaves a small receipt on the phone so the app's 'Free Up Space' knows what's safely on the PC.
+
+1. Open the downloaded **PicJotSetup.exe**. Windows may say *Windows protected your PC*, because the installer isn't signed yet: click **More info**, then **Run anyway**.
+2. Click **Install**. It installs for you only, so Windows doesn't ask for an administrator, and starts by itself. The first time, choose the folder or drive for your backup.
+3. Windows asks whether PicJot WiFi Backup Manager may use your network: choose **Allow** (private networks are enough). If Windows has your home network set to *Public*, switch it to *Private* (Settings → Network & internet → your connection → Network profile type).
+4. A page with a QR code opens. In PicJot: **Settings → Backup → Back Up over Wi-Fi → Pair with PC**, and scan the code (once; the phone remembers the PC). Pairing the same phone again later replaces its earlier pairing.
+5. Tap **Back Up Now** whenever the PC is on. PicJot WiFi Backup Manager runs in the background with an icon by the clock (click **^** if you don't see it) and starts with Windows. A notification on the PC says when a backup has finished, and the PC doesn't go to sleep while one runs.
+
+**The icon by the clock:** click it to see the PicJot WiFi Backup Manager page (the last backup, paired phones listed by name and model, recent activity; **Forget** unpairs a phone you no longer use, e.g. a lost one). Right-click it for **Pair a Phone**, **Change Backup Folder...**, **Start with Windows** (on or off) or **Quit**.
+
+The connection is encrypted with the PC's own certificate, which the phone checks; only paired phones are accepted, and only on your home network. A backup that's interrupted carries on where it stopped next time. If the backup drive is unplugged, the phone says so.
+
+**Updating:** run a newer installer over it; it stops the running copy first (finishing any backup). **Uninstalling:** Settings → Apps → PicJot WiFi Backup Manager. Your backed-up photos are never touched, and its settings (paired phones, the backup folder) are kept in case you install it again.
+
+<details>
+<summary>Advanced: back up over a USB cable (needs Node.js)</summary>
+
+The older USB-cable tool is still here for people who prefer a cable: **[download the backup tool (zip)](https://github.com/djxprice/photoapp-backup/archive/refs/heads/main.zip)**. It backs up to the same folder in the same way.
 
 > ⚠️ **Node.js is required.** The backup tool runs on Node.js, which most PCs don't have yet. Install it first from **[nodejs.org](https://nodejs.org)**: download the **LTS** version and accept the default options. You only need to do this once. (If it's missing, the backup window says so.)
 
@@ -87,19 +106,9 @@ Backs up **all photos** from your phone to a folder or drive on your PC over USB
 
 The first backup copies everything (a few minutes for a few GB); after that, runs take seconds plus any new photos.
 
-**Over Wi-Fi instead (no cable):**
+The source of PicJot WiFi Backup Manager is in this repository too (`receiver.js`, `tray/`); `PicJot WiFi Backup Manager.cmd` runs it with Node.js instead of the installer.
 
-1. Double-click **`PicJot WiFi Backup Manager.cmd`** (in the same folder; it was called *PicJot Receiver* until October 2026). The first time it sets itself up (a few seconds) and asks for the backup folder if you haven't chosen one with the USB backup. Then **PicJot WiFi Backup Manager runs in the background**, with an icon by the clock (click **^** if you don't see it), and **starts with Windows** from then on. A page with a QR code opens.
-2. The first time, Windows asks whether to allow Node.js: allow it on **private networks**. If Windows has your home network set to *Public*, switch it to *Private* (Settings → Network & internet → your connection → Network profile type).
-3. In PicJot: **Settings → Backup → Back Up over Wi-Fi → Pair with PC**, and scan the code (once; the phone remembers the PC). Pairing the same phone again later replaces its earlier pairing.
-4. Tap **Back Up Now** whenever the PC is on. A notification on the PC says when a backup has finished, and the PC doesn't go to sleep while one runs.
-
-**The icon by the clock:** click it to see the PicJot WiFi Backup Manager page (the last backup, paired phones listed by name and model, recent activity; **Forget** unpairs a phone you no longer use, e.g. a lost one). Right-click it for **Pair a Phone**, **Change Backup Folder...**, **Start with Windows** (on or off) or **Quit**.
-
-The connection is encrypted with the PC's own certificate, which the phone checks; only paired phones are accepted, and only on your home network. A backup that's interrupted carries on where it stopped next time. If the backup drive is unplugged, the phone says so.
-
-<details>
-<summary>Command line and details</summary>
+Command line:
 
 ```
 node backup.js --to "E:\Photos"              # back up from the phone
