@@ -8,6 +8,9 @@
 // with Windows (.NET Framework 4), so it needs no download and, being a
 // Windows program rather than a script, opens no console window at login.
 // That compiler only knows C# 5: no $"..." strings, no ?. operator.
+// The installer (Step 27b, tools/build-pc.ps1) ships it built, next to
+// "PicJot WiFi Receiver.exe" (the receiver with Node.js built in), which it
+// then runs instead of `node receiver.js`.
 //
 //   "PicJot WiFi Backup Manager.exe"          start (or, if running, open its
 //                                             page); the first start on a PC
@@ -15,6 +18,9 @@
 //                                             (%APPDATA%\PhotoApp\receiver-tray.json
 //                                             remembers that it happened)
 //   "PicJot WiFi Backup Manager.exe" --quit   ask the running one to quit
+//                                   --quit --wait  ... and wait until it has
+//                                             (the installer, before it
+//                                             replaces or removes the files)
 //
 // The mutex and quit event keep their old names, so this program and the old
 // "PicJot Receiver.exe" can stop each other.
@@ -33,6 +39,11 @@ using System.Web.Script.Serialization;
 using System.Windows.Forms;
 using Microsoft.Win32;
 
+// Its name in Task Manager and in the file's properties (the installer's
+// build adds the version).
+[assembly: AssemblyTitle("PicJot WiFi Backup Manager")]
+[assembly: AssemblyProduct("PicJot")]
+
 static class Program
 {
     [STAThread]
@@ -42,6 +53,7 @@ static class Program
         {
             try { EventWaitHandle.OpenExisting(Tray.QuitEventName).Set(); }
             catch (WaitHandleCannotBeOpenedException) { }
+            if (Array.IndexOf(args, "--wait") >= 0) WaitUntilGone();
             return 0;
         }
         bool created;
@@ -63,6 +75,23 @@ static class Program
         }
         return 0;
     }
+
+    // Waits until the running copy has quit: it holds the mutex until it
+    // ends, after its receiver has stopped (a backup being filed is finished
+    // first, up to 15 minutes).
+    static void WaitUntilGone()
+    {
+        Mutex m;
+        try { m = Mutex.OpenExisting(Tray.MutexName); }
+        catch (WaitHandleCannotBeOpenedException) { return; }
+        using (m)
+        {
+            bool owned = false;
+            try { owned = m.WaitOne(TimeSpan.FromMinutes(16)); }
+            catch (AbandonedMutexException) { owned = true; } // it ended without letting go: also gone
+            if (owned) m.ReleaseMutex();
+        }
+    }
 }
 
 class Tray
@@ -76,6 +105,8 @@ class Tray
     const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
     const string RunName = AppName;
     const string OldRunName = "PicJot Receiver"; // its Start with Windows entry until 2026-10-20
+    // The receiver with Node.js built in, installed beside this program.
+    const string ReceiverExe = "PicJot WiFi Receiver.exe";
     const int ExitPortInUse = 3;
 
     [DllImport("kernel32.dll")]
@@ -92,8 +123,8 @@ class Tray
     ToolStripMenuItem startItem;
     Control ui;
     EventWaitHandle quitEvent;
-    Process node;
-    string nodePath;
+    Process node; // the receiver, packaged or `node receiver.js`
+    string nodePath; // null when packaged
     bool quitting, awake, baselineSet, pairShown, stopped;
     string seenBackupAt, seenProblem;
     int restarts;
@@ -102,19 +133,25 @@ class Tray
     string ConfigFile { get { return Path.Combine(configDir, "backup.json"); } }
     string StateFile { get { return Path.Combine(configDir, "receiver-tray.json"); } }
 
+    bool Packaged { get { return File.Exists(Path.Combine(dir, ReceiverExe)); } }
+
     public bool Start()
     {
-        if (!File.Exists(Path.Combine(dir, "receiver.js")))
+        if (Packaged) nodePath = null;
+        else if (!File.Exists(Path.Combine(dir, "receiver.js")))
         {
             MessageBox.Show("receiver.js is missing from " + dir + ". Keep " + AppName + " in the PicJot Backup folder.", AppName, MessageBoxButtons.OK, MessageBoxIcon.Error);
             return false;
         }
-        nodePath = FindNode();
-        if (nodePath == null)
+        else
         {
-            if (MessageBox.Show(AppName + " needs Node.js. Install the LTS version from nodejs.org, then open " + AppName + " again.\n\nOpen nodejs.org now?", AppName, MessageBoxButtons.YesNo, MessageBoxIcon.Information) == DialogResult.Yes)
-                OpenUrl("https://nodejs.org");
-            return false;
+            nodePath = FindNode();
+            if (nodePath == null)
+            {
+                if (MessageBox.Show(AppName + " needs Node.js. Install the LTS version from nodejs.org, then open " + AppName + " again.\n\nOpen nodejs.org now?", AppName, MessageBoxButtons.YesNo, MessageBoxIcon.Information) == DialogResult.Yes)
+                    OpenUrl("https://nodejs.org");
+                return false;
+            }
         }
         if (ReadFolder() == null)
         {
@@ -201,7 +238,9 @@ class Tray
     // ── The receiver (node) ──
     void StartNode()
     {
-        ProcessStartInfo psi = new ProcessStartInfo(nodePath, "\"" + Path.Combine(dir, "receiver.js") + "\" --background");
+        ProcessStartInfo psi = nodePath == null
+            ? new ProcessStartInfo(Path.Combine(dir, ReceiverExe), "--background")
+            : new ProcessStartInfo(nodePath, "\"" + Path.Combine(dir, "receiver.js") + "\" --background");
         psi.UseShellExecute = false;
         psi.CreateNoWindow = true;
         psi.WorkingDirectory = dir;
@@ -224,7 +263,7 @@ class Tray
         }
         catch (Exception e)
         {
-            Note("Couldn't start node: " + e.Message);
+            Note("Couldn't start the receiver: " + e.Message);
             node = null;
             stopped = true;
             SetText(AppName + ": stopped");
