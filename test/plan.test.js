@@ -11,6 +11,7 @@ const {
   resolveMonth,
   destinationFor,
   sidecarPathFor,
+  besideSidecarPathFor,
   legacySidecarPathFor,
   parseLeadingJson,
   mostCommonDir,
@@ -80,8 +81,9 @@ test('destination paths and clash suffix', () => {
   assert.strictEqual(destinationFor(m, 'IMG_1.jpg', 'abcdef0123', () => true), '2026/07/IMG_1_abcdef01.jpg');
   assert.strictEqual(destinationFor(m, 'IMG.1.tar.jpg', 'abcdef0123', () => true), '2026/07/IMG.1.tar_abcdef01.jpg');
   assert.strictEqual(destinationFor({ year: null }, 'x.jpg', 'h'), 'undated/x.jpg');
-  assert.strictEqual(sidecarPathFor('2026/07/IMG_1.jpg'), '2026/07/IMG_1.jpg.json');
-  assert.strictEqual(sidecarPathFor('2026/07/IMG_1.dng'), '2026/07/IMG_1.dng.json');
+  assert.strictEqual(sidecarPathFor('2026/07/IMG_1.jpg'), 'PicJot Tags/2026/07/IMG_1.jpg.json');
+  assert.strictEqual(sidecarPathFor('2026/07/IMG_1.dng'), 'PicJot Tags/2026/07/IMG_1.dng.json');
+  assert.strictEqual(besideSidecarPathFor('2026/07/IMG_1.jpg'), '2026/07/IMG_1.jpg.json');
   assert.strictEqual(legacySidecarPathFor('2026/07/IMG_1.jpg'), '2026/07/IMG_1.json');
 });
 

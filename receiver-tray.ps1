@@ -1,29 +1,31 @@
 <#
-  PicJot WiFi Backup Manager - double-click launcher (started by
-  "PicJot WiFi Backup Manager.cmd"). Called PicJot Receiver until 2026-10-20.
+  PicJot for Windows - double-click launcher (started by "PicJot.cmd").
+  Called PicJot Receiver until 2026-10-20, then PicJot WiFi Backup Manager
+  until 2026-10-23.
 
-  Builds "PicJot WiFi Backup Manager.exe" beside this script the first time
+  Builds "PicJot.exe" beside this script the first time
   (and after an update) from tray\PicJotReceiver.cs, with the C# compiler that
   comes with Windows, then starts it: the receiver runs in the background with
   an icon by the clock (docs/wifi-backup.md, stage 2). If it's already running
   from here, its status page opens instead. If the program can't be built,
-  the receiver runs in this window as before. A running "PicJot Receiver.exe"
-  (the old name) is stopped and its file removed; the new program moves its
-  Start with Windows entry over.
+  the receiver runs in this window as before. A running copy under an old
+  name ("PicJot Receiver.exe", "PicJot WiFi Backup Manager.exe") is stopped
+  and its file removed; the new program moves its Start with Windows entry
+  over.
 
   Automation/testing:  receiver-tray.ps1 -BuildOnly
 #>
 param([switch]$BuildOnly)
 
 $ErrorActionPreference = 'Stop'
-$name = 'PicJot WiFi Backup Manager'
+$name = 'PicJot'
 try { $Host.UI.RawUI.WindowTitle = $name } catch {}
 
 $here = $PSScriptRoot
 $cs = Join-Path $here 'tray\PicJotReceiver.cs'
 $ico = Join-Path $here 'tray\picjot.ico'
 $exe = Join-Path $here "$name.exe"
-$oldExe = Join-Path $here 'PicJot Receiver.exe' # the name until 2026-10-20
+$oldExes = @('PicJot Receiver.exe', 'PicJot WiFi Backup Manager.exe') | ForEach-Object { Join-Path $here $_ } # the old names
 
 function Fail([string]$text) {
   Write-Host $text -ForegroundColor Red
@@ -73,7 +75,7 @@ function Build {
 }
 
 $stale = Is-Stale
-$running = @(Get-Process -Name $name, 'PicJot Receiver' -ErrorAction SilentlyContinue)
+$running = @(Get-Process -Name $name, 'PicJot Receiver', 'PicJot WiFi Backup Manager' -ErrorAction SilentlyContinue)
 $runningHere = @($running | Where-Object { $_.Path -eq $exe })
 
 if ($BuildOnly) {
@@ -99,8 +101,8 @@ if ($running.Count) {
   $running | Wait-Process -Timeout 900 -ErrorAction SilentlyContinue
 }
 
-# The program under its old name is no longer used.
-foreach ($f in @($oldExe, (Join-Path $here 'PicJot Receiver.new.exe'))) {
+# The program under its old names is no longer used.
+foreach ($f in @($oldExes + (Join-Path $here 'PicJot Receiver.new.exe'))) {
   if (Test-Path -LiteralPath $f) { Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue }
 }
 

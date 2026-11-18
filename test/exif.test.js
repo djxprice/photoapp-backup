@@ -49,3 +49,19 @@ test('returns null for non-JPEG or missing EXIF', () => {
 });
 
 module.exports = { jpegWithDate };
+
+test('reads the date from TIFF-based RAW files and from EXIF inside other containers', () => {
+  const j = jpegWithDate({ original: '2011:03:05 08:09:10' });
+  const tiff = j.subarray(j.indexOf('Exif\0\0') + 6, j.length - 2); // the TIFF block alone
+  // CR2 / NEF / ARW / DNG: the file starts with the TIFF header.
+  assert.strictEqual(readExifDate(Buffer.concat([tiff, Buffer.alloc(100)])), '2011:03:05 08:09:10');
+  // HEIC / RAF: "Exif\0\0" and the TIFF somewhere inside.
+  const heic = Buffer.concat([Buffer.from('\0\0\0\x18ftypheic'), Buffer.alloc(300, 9), Buffer.from('\0\0\0\x06Exif\0\0', 'latin1'), tiff]);
+  assert.strictEqual(readExifDate(heic), '2011:03:05 08:09:10');
+  // CR3: a "CMT1" box holding the TIFF.
+  const cr3 = Buffer.concat([Buffer.from('\0\0\0\x18ftypcrx '), Buffer.alloc(50, 3), Buffer.from('\0\0\x01\0CMT1'), tiff]);
+  assert.strictEqual(readExifDate(cr3), '2011:03:05 08:09:10');
+  // Nothing to find.
+  assert.strictEqual(readExifDate(Buffer.alloc(500, 0x41)), null);
+  assert.strictEqual(readExifDate(Buffer.from('II*\0\xff\xff\xff\xff', 'latin1')), null);
+});

@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 'use strict';
 /*
-  PicJot Wi-Fi receiver, shown as "PicJot WiFi Backup Manager" (called PicJot
-  Receiver until 2026-10-20; roadmap Step 33; design in docs/wifi-backup.md).
+  PicJot Wi-Fi receiver, the heart of PicJot for Windows, shown as "PicJot"
+  (called PicJot Receiver until 2026-10-20, then PicJot WiFi Backup Manager
+  until 2026-10-23; roadmap Step 33; design in docs/wifi-backup.md).
 
     node pc/receiver.js                 # in this window; backs up to the folder the USB backup uses
     node pc/receiver.js --background    # for the tray icon (pc/tray): no browser, a log file,
@@ -38,16 +39,21 @@ const https = require('https');
 const crypto = require('crypto');
 const { pipeline } = require('stream/promises');
 
-const { runBackup } = require('./backup');
+const { runBackup, importEstimate } = require('./backup');
 const { createCertificate } = require('./lib/cert');
-const { readJson, writeJson } = require('./lib/files');
-const { isImage, isSidecarName } = require('./lib/plan');
+const { readJson, writeJson, readHead, walk, placeVerified, freeBytes: driveFree, sizeText } = require('./lib/files');
+const { isImage, isSidecarName, baseName, sidecarPathFor, besideSidecarPathFor, legacySidecarPathFor, parseLeadingJson } = require('./lib/plan');
+const { readExifDate } = require('./lib/exif');
+const { oldPhotos, summary: oldSummary, pickBatch, kindOf, yearOf } = require('./lib/old');
+const { rawPreview } = require('./lib/rawpreview');
+const { timelineData, sendTimelinePhoto, timelinePage } = require('./timeline-page');
+const { cleanHideList } = require('./lib/timeline');
 const { createResponder } = require('./lib/mdns');
 const { tagsText } = require('./lib/words');
 const qrcode = require('./lib/vendor/qrcode');
 
 // Its name on its pages and in messages (the tray program uses the same).
-const APP_NAME = 'PicJot WiFi Backup Manager';
+const APP_NAME = 'PicJot';
 const PROTOCOL = 1;
 const DEFAULT_PORT = 47823;
 const DEFAULT_PAGE_PORT = 47824;
@@ -164,6 +170,26 @@ function backupText(b) {
   return text;
 }
 
+// A folder of old photos added, in a sentence: "1,200 photos added, 3
+// already in the backup."
+function importText(r) {
+  if (!r) return '';
+  let text = `${plural(r.copied || 0, 'photo')} added`;
+  if (r.present) text += `, ${r.present} already in the backup`;
+  text += '.';
+  if (r.failed) text += ` ${plural(r.failed, 'photo')} couldn't be copied (see 'Recent Activity').`;
+  if (r.notCopied) text += ` ${plural(r.notCopied, 'photo')} not added: the backup drive is nearly full.`;
+  return text;
+}
+
+// The backup's copy, in a sentence: "31,240 photos (120 new)."
+function copyText(c) {
+  if (!c) return '';
+  let text = `${plural(c.photos || 0, 'photo')} (${c.copied || 0} new).`;
+  if (c.failed) text += ` ${plural(c.failed, 'file')} couldn't be copied (see 'Recent Activity').`;
+  return text;
+}
+
 // ── Receiver ──────────────────────────────────────────────────────────────
 // configDir: where receiver.json lives (the certificate, paired phones, the
 // last backup). to: the backup folder, or a function returning it (read for
@@ -181,6 +207,8 @@ function createReceiver({
   addresses = localAddresses,
   discovery = false,
   background = false,
+  freeBytes = driveFree, // free space on the backup drive (tests pass their own)
+  driveOf = (p) => path.parse(path.resolve(p)).root.toLowerCase(), // a copy must go to another drive (tests pass their own)
 }) {
   const configFile = path.join(configDir, 'receiver.json');
   let config = readJson(configFile, null);
@@ -283,6 +311,7 @@ function createReceiver({
       : [];
     for (const id of replaced) {
       delete config.phones[id];
+      dropPhoneFiles(id);
       if (active && active.phoneId === id) active = null;
     }
     config.phones[phoneId] = {
@@ -324,8 +353,13 @@ function createReceiver({
   let finishing = false;
   let active = null; // { phoneId, phone, lastAt }
   let requests = 0;
+  // Busy (the tray keeps the PC awake meanwhile): a backup being filed, old
+  // photos being added, the backup being copied, a phone sending.
   const busy = () =>
-    finishing || requests > 0 || Boolean(active && now().getTime() - active.lastAt < BUSY_IDLE_MS);
+    finishing ||
+    Boolean(copying) ||
+    requests > 0 ||
+    Boolean(active && now().getTime() - active.lastAt < BUSY_IDLE_MS);
 
   // ── A backup session ──
   // Saved to disk so an interrupted backup resumes (the staged photos stay).
@@ -355,8 +389,14 @@ function createReceiver({
     }
   };
 
+  // While old photos are being added, a phone can't back up (both write the
+  // backup's index): it's told so plainly.
+  const busyAddingOld = () =>
+    fail(409, 'Your PC is adding old photos to the backup right now. Back up again when it has finished (a few minutes).');
+
   function inventory(phoneId, body) {
     const f = folder();
+    if (importing) throw busyAddingOld();
     if (finishing) throw fail(409, 'a backup is being finished; try again in a moment');
     const files = [];
     const seen = new Set();
@@ -380,6 +420,10 @@ function createReceiver({
       saveConfig();
     }
     writeJson(f.sessionFile, { phoneId, phone, startedAt: now().toISOString(), files });
+    // What is on this phone now, so old photos (Step 26b) leave these out: the
+    // phone reviews its own photos in its daily review.
+    writeJson(phoneFilesFile(f, phoneId), { at: now().toISOString(), files: files.map((x) => [x.rel, x.size]) });
+    oldCache = null;
     active = { phoneId, phone, lastAt: now().getTime() };
     if (need.length) say(`${phone} is backing up: ${plural(need.length, 'photo')} to receive.`);
     // The backup folder, for the phone's Settings ("PC > folder").
@@ -413,6 +457,7 @@ function createReceiver({
     const f = folder();
     const session = loadSession(f);
     if (!session || session.phoneId !== phoneId) throw fail(409, 'no backup in progress (send the photo list first)');
+    if (importing) throw busyAddingOld();
     if (finishing) throw fail(409, 'a backup is already being finished');
     finishing = true;
     try {
@@ -479,6 +524,7 @@ function createReceiver({
         if (newest) delivered.receipt = { name: newest, text: fs.readFileSync(path.join(dir, newest), 'utf8') };
       }
       fs.rmSync(f.sessionFile, { force: true });
+      oldCache = null; // old photos may have tag files now
       const summary = {
         copied: result.copied || 0,
         present: result.present || 0,
@@ -511,6 +557,393 @@ function createReceiver({
     }
   }
 
+  // ── Old photos (roadmap Step 26b) ──
+  // Photos in the backup the phone can't review in its daily review (not on
+  // it): sent in batches for its "Your Old Photos" review (lib/old.js). Their
+  // tags come back as tag files with the next backup, filed in the tag folder
+  // like any photo's; skipped and reviewed ones are kept in old-photos.json so they
+  // aren't offered again.
+  const phonesDir = (f) => path.join(f.meta, 'phones');
+  const phoneFilesFile = (f, phoneId) => path.join(phonesDir(f), `${phoneId}.json`);
+  const oldDoneFile = (f) => path.join(f.meta, 'old-photos.json');
+  let oldCache = null; // { to, at, list }: the list takes a pass over the backup
+  const OLD_CACHE_MS = 60 * 1000;
+
+  // A forgotten or re-paired phone's list no longer counts (best effort: the
+  // backup folder may be unplugged).
+  function dropPhoneFiles(phoneId) {
+    try {
+      fs.rmSync(phoneFilesFile(folder(), phoneId), { force: true });
+      oldCache = null;
+    } catch {
+      // folder not available
+    }
+  }
+
+  // "<phone path>|<size>" of every photo on every phone as of its last backup.
+  function onPhones(f) {
+    const set = new Set();
+    const dir = phonesDir(f);
+    for (const name of fs.existsSync(dir) ? fs.readdirSync(dir) : []) {
+      const j = readJson(path.join(dir, name), null);
+      for (const [rel, size] of (j && Array.isArray(j.files) && j.files) || []) set.add(`${rel}|${size}`);
+    }
+    return set;
+  }
+
+  // A PicJot tag file (not, say, a Google Takeout .json, which is named the
+  // same way).
+  function isTagFile(file) {
+    try {
+      const r = parseLeadingJson(fs.readFileSync(file, 'utf8'));
+      return Boolean(r && r.value && r.value.hashAlgorithm === 'md5');
+    } catch {
+      return false;
+    }
+  }
+
+  function oldList(f) {
+    if (oldCache && oldCache.to === f.to && now().getTime() - oldCache.at < OLD_CACHE_MS) return oldCache.list;
+    const index = readJson(f.indexFile, { photos: {} });
+    const done = readJson(oldDoneFile(f), { done: {} }).done || {};
+    const on = (p) => path.join(f.to, fromPosix(p));
+    const list = oldPhotos(index.photos, {
+      done,
+      onPhone: onPhones(f),
+      exists: (p) => fs.existsSync(on(p)),
+      // In the tag folder, or (not moved in yet: a backup does that) beside it.
+      tagged: (p) => [sidecarPathFor, besideSidecarPathFor, legacySidecarPathFor].some((at) => isTagFile(on(at(p)))),
+    });
+    oldCache = { to: f.to, at: now().getTime(), list };
+    return list;
+  }
+
+  // The old-photo requests need this phone to have backed up over Wi-Fi once,
+  // so the PC knows which photos are on it.
+  function oldFolder(phoneId) {
+    const f = folder();
+    if (!fs.existsSync(phoneFilesFile(f, phoneId))) {
+      throw fail(409, 'Back up over Wi-Fi once first, so the PC knows which photos are already on this phone.');
+    }
+    return f;
+  }
+
+  function oldOverview(phoneId) {
+    const f = oldFolder(phoneId);
+    const done = readJson(oldDoneFile(f), { done: {} }).done || {};
+    return { ...oldSummary(oldList(f)), reviewed: Object.keys(done).length };
+  }
+
+  // When a photo was taken, as "YYYY-MM-DDTHH:MM:SS" (the camera's local
+  // time), from its EXIF (JPEG, RAW, HEIC), or null.
+  function takenAt(file) {
+    try {
+      const m = /^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})/.exec(readExifDate(readHead(file)) || '');
+      return m ? `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}` : null;
+    } catch {
+      return null;
+    }
+  }
+
+  // An ISO time (Google Takeout's, in UTC) in the same form, in the PC's
+  // local time (as the photo was filed by month), or null.
+  function localStamp(iso) {
+    const d = new Date(iso || '');
+    if (Number.isNaN(d.getTime())) return null;
+    const p = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  }
+
+  function oldBatch(phoneId, body) {
+    const f = oldFolder(phoneId);
+    const list = oldList(f);
+    const year = body && body.year !== undefined ? (body.year === null ? null : Number(body.year)) : undefined;
+    const exclude = Array.isArray(body && body.exclude) ? body.exclude.map(String) : [];
+    const batch = pickBatch(list, { count: body && body.count, order: body && body.order, year, exclude });
+    const index = readJson(f.indexFile, { photos: {} });
+    return {
+      photos: batch.map((p) => ({
+        // The Google Photos description (Takeout imports), as a caption to start from.
+        ...(index.photos[p.hash] && index.photos[p.hash].description ? { caption: index.photos[p.hash].description } : {}),
+        hash: p.hash,
+        name: baseName(p.path),
+        path: p.path,
+        year: yearOf(p.path),
+        month: Number((/^\d{4}\/(\d{2})\//.exec(p.path) || [])[1]) || null,
+        // EXIF first; then Google's time for a Takeout photo without one.
+        taken:
+          takenAt(path.join(f.to, fromPosix(p.path))) ||
+          localStamp(index.photos[p.hash] && index.photos[p.hash].takeoutTime),
+        size: p.size,
+        kind: kindOf(p.path),
+      })),
+      remaining: list.length,
+    };
+  }
+
+  const CONTENT_TYPES = { jpeg: 'image/jpeg', heic: 'image/heic', png: 'image/png', webp: 'image/webp', raw: 'image/jpeg' };
+
+  // One old photo's picture: the file itself, or for RAW the JPEG inside.
+  async function oldFile(phoneId, res, url) {
+    const f = oldFolder(phoneId);
+    const hash = String(url.searchParams.get('hash') || '');
+    const e = /^[0-9a-f]{32}$/.test(hash) && readJson(f.indexFile, { photos: {} }).photos[hash];
+    if (!e) throw fail(404, 'not in the backup');
+    const file = path.join(f.to, fromPosix(e.path));
+    if (!fs.existsSync(file)) throw fail(404, `${e.path} is no longer in the backup folder`);
+    const kind = kindOf(e.path);
+    const headers = { 'content-type': CONTENT_TYPES[kind], 'cache-control': 'no-store', 'x-picjot-kind': kind };
+    if (kind === 'raw') {
+      const preview = rawPreview(fs.readFileSync(file));
+      if (!preview) throw fail(415, `${baseName(e.path)} has no picture inside that a phone can show`);
+      res.writeHead(200, { ...headers, 'content-length': preview.length });
+      res.end(preview);
+      return;
+    }
+    res.writeHead(200, { ...headers, 'content-length': fs.statSync(file).size });
+    await pipeline(fs.createReadStream(file), res);
+  }
+
+  // Reviewed on the phone: { photos: [{ hash, skipped }] }. Not offered again.
+  function oldDone(phoneId, body) {
+    const f = oldFolder(phoneId);
+    const index = readJson(f.indexFile, { photos: {} });
+    const state = readJson(oldDoneFile(f), { version: 1, done: {} });
+    state.version = 1;
+    state.done = state.done || {};
+    let added = 0;
+    for (const p of (body && Array.isArray(body.photos) && body.photos) || []) {
+      const hash = String((p && p.hash) || '');
+      if (!index.photos[hash] || state.done[hash]) continue;
+      state.done[hash] = { at: now().toISOString(), phone: phoneId, skipped: Boolean(p.skipped) };
+      added += 1;
+    }
+    if (added) {
+      writeJson(oldDoneFile(f), state);
+      if (oldCache) oldCache.list = oldCache.list.filter((p) => !state.done[p.hash]);
+    }
+    return { ok: true, added, remaining: oldList(f).length };
+  }
+
+  // ── Adding a folder of old photos (Step 26b) ──
+  // The tray's 'Add Old Photos from a Folder…' (a line "import <folder>" on
+  // stdin). Copies, never moves, its photos into the backup, filed by month
+  // and deduplicated (pc/backup.js --from); they're then old photos for the
+  // phone to review.
+  let importing = null; // { from, startedAt }
+
+  const within = (a, b) => {
+    const r = path.relative(b, a);
+    return r === '' || (!r.startsWith('..') && !path.isAbsolute(r));
+  };
+
+  // Why an import didn't happen goes on the page's Recent Activity too.
+  async function importFolder(dir) {
+    try {
+      return await addFolder(dir);
+    } catch (e) {
+      say(`Couldn't add old photos: ${e.message}`);
+      throw e;
+    }
+  }
+
+  async function addFolder(dir) {
+    const f = folder();
+    const src = path.resolve(String(dir || ''));
+    if (!dir || !fs.existsSync(src) || !fs.statSync(src).isDirectory()) throw fail(400, `${src} isn't a folder.`);
+    if (within(src, f.to) || within(f.to, src)) {
+      throw fail(400, `Choose a folder other than the backup folder (${f.to}) and not one that holds it.`);
+    }
+    if (finishing) throw fail(409, 'A backup is being filed; try again when it has finished.');
+    // Room first: the photos are copied (the folder stays as it is).
+    const est = importEstimate(src, f.to, freeBytes);
+    if (est.needed > est.free) {
+      throw fail(
+        507,
+        `Not enough room: ${est.photos === 1 ? 'the photo' : `the ${est.photos} photos`} in ${src} ${est.photos === 1 ? 'needs' : 'need'} about ${sizeText(est.bytes)}, and the backup ` +
+          `drive has ${sizeText(est.free)} free. Make room on it, or add a smaller folder.`
+      );
+    }
+    finishing = true;
+    importing = { from: src, startedAt: now().toISOString(), done: 0, total: est.photos };
+    say(`Adding old photos from ${src}: ${plural(est.photos, 'photo')} (about ${sizeText(est.bytes)} new)…`);
+    try {
+      const result = await runBackup({
+        to: f.to,
+        from: src,
+        now,
+        log: (m) => say(m),
+        freeBytes,
+        onProgress: ({ done, total }) => {
+          if (importing) Object.assign(importing, { done, total });
+        },
+      });
+      config.lastImport = {
+        at: now().toISOString(),
+        from: src,
+        copied: result.copied || 0,
+        present: result.present || 0,
+        failed: result.failed || 0,
+        notCopied: result.notCopied || 0,
+      };
+      saveConfig();
+      oldCache = null;
+      say(`Added old photos from ${src}: ${importText(config.lastImport)}`);
+      return config.lastImport;
+    } finally {
+      finishing = false;
+      importing = null;
+    }
+  }
+
+  // ── A copy of the backup on another drive (2026-10-23, the user's call) ──
+  // Old photos, once added, are only in the backup (the phone and the USB
+  // stick never have them): 'Copy Backup to a Drive…' keeps a second copy on
+  // another drive (e.g. an external hard drive). What's new or changed is
+  // copied, photos verified by their MD5; nothing is ever deleted from the
+  // copy. It's a complete backup in the same layout (photos, PicJot Tags,
+  // .photoapp with the index as it was when the copy started, so every photo
+  // it lists is there), marked .photoapp/picjot-copy.json.
+  let copying = null; // { to, done, total }
+  const COPY_MARK = 'picjot-copy.json';
+
+  async function copyBackup(dir) {
+    try {
+      return await copyTo(dir);
+    } catch (e) {
+      say(`Couldn't copy the backup: ${e.message}`);
+      throw e;
+    }
+  }
+
+  // Where the copy goes in the folder chosen: the folder itself when it's
+  // empty or already a copy, else a "PicJot Backup Copy" folder in it.
+  // Another kind of PicJot backup (a USB stick's, a PC's) is refused.
+  function copyHome(dir) {
+    const meta = path.join(dir, '.photoapp');
+    if (fs.existsSync(path.join(meta, COPY_MARK))) return dir;
+    if (fs.existsSync(meta)) throw fail(400, `${dir} is another PicJot backup (a USB stick's, or a PC's). Choose another folder.`);
+    if (!fs.readdirSync(dir).length) return dir;
+    const inner = path.join(dir, 'PicJot Backup Copy');
+    if (fs.existsSync(path.join(inner, '.photoapp')) && !fs.existsSync(path.join(inner, '.photoapp', COPY_MARK))) {
+      throw fail(400, `${inner} is another PicJot backup. Choose another folder.`);
+    }
+    return inner;
+  }
+
+  async function copyTo(dir) {
+    const f = folder();
+    const chosen = path.resolve(String(dir || ''));
+    if (!dir || !fs.existsSync(chosen) || !fs.statSync(chosen).isDirectory()) throw fail(400, `${chosen} isn't a folder.`);
+    if (within(chosen, f.to) || within(f.to, chosen)) {
+      throw fail(400, `Choose a folder outside the backup folder (${f.to}) and not one that holds it.`);
+    }
+    if (driveOf(chosen) === driveOf(f.to)) {
+      throw fail(400, `Choose a folder on another drive: a copy on the same drive as the backup (${driveOf(f.to)}) is lost with it.`);
+    }
+    if (copying) throw fail(409, `The backup is already being copied to ${copying.to}.`);
+    const dest = copyHome(chosen);
+
+    // What to copy: the photos the index lists now, their tag files, and
+    // PicJot's other records; the index itself last.
+    const index = readJson(f.indexFile, { photos: {} });
+    const items = [];
+    for (const [hash, e] of Object.entries(index.photos || {})) {
+      items.push({ rel: e.path, hash, size: e.size });
+      for (const rel of [besideSidecarPathFor(e.path), legacySidecarPathFor(e.path)]) {
+        if (fs.existsSync(path.join(f.to, fromPosix(rel)))) items.push({ rel });
+      }
+    }
+    for (const rel of walk(f.to)) {
+      const top = rel.split('/')[0];
+      if (top !== 'PicJot Tags' && top !== '.photoapp') continue;
+      if (rel === '.photoapp/index.json' || rel.startsWith('.photoapp/staging/') || /\.(tmp|picjot-part)$/.test(rel)) continue;
+      items.push({ rel });
+    }
+    const upToDate = (it) => {
+      try {
+        const d = fs.statSync(path.join(dest, fromPosix(it.rel)));
+        if (it.hash) return d.size === it.size; // a photo never changes in the backup
+        const s = fs.statSync(path.join(f.to, fromPosix(it.rel)));
+        return d.size === s.size && d.mtimeMs >= s.mtimeMs;
+      } catch {
+        return false;
+      }
+    };
+    const todo = items.filter((it) => !upToDate(it));
+    const bytes = todo.reduce((n, it) => {
+      try {
+        return n + (it.size || fs.statSync(path.join(f.to, fromPosix(it.rel))).size);
+      } catch {
+        return n;
+      }
+    }, 0);
+    fs.mkdirSync(path.join(dest, '.photoapp'), { recursive: true });
+    const free = freeBytes(dest);
+    if (bytes + 200 * 1024 * 1024 > free) {
+      throw fail(507, `Not enough room on ${driveOf(dest)}: the copy needs about ${sizeText(bytes)} more, and it has ${sizeText(free)} free.`);
+    }
+    writeJson(path.join(dest, '.photoapp', COPY_MARK), {
+      type: 'picjot-backup-copy',
+      of: f.to,
+      pc: pcName,
+      createdAt: (readJson(path.join(dest, '.photoapp', COPY_MARK), {}) || {}).createdAt || now().toISOString(),
+    });
+
+    copying = { to: dest, done: 0, total: todo.length };
+    say(`Copying the backup to ${dest}: ${plural(todo.length, 'file')} (about ${sizeText(bytes)}) new or changed…`);
+    const failed = [];
+    let photosCopied = 0;
+    try {
+      for (const it of todo) {
+        const src = path.join(f.to, fromPosix(it.rel));
+        const dst = path.join(dest, fromPosix(it.rel));
+        try {
+          fs.mkdirSync(path.dirname(dst), { recursive: true });
+          if (it.hash) {
+            // A photo: replaced only if what's there isn't it (size differs).
+            fs.rmSync(dst, { force: true });
+            if (!(await placeVerified(src, dst, it.hash, { move: false }))) throw new Error('the copy differs from the original');
+            photosCopied += 1;
+          } else {
+            const part = `${dst}.picjot-part`;
+            fs.copyFileSync(src, part);
+            if (fs.statSync(part).size !== fs.statSync(src).size) throw new Error('the copy differs from the original');
+            fs.renameSync(part, dst);
+          }
+        } catch (e) {
+          failed.push(`${it.rel}: ${e.message}`);
+        }
+        copying.done += 1;
+        if (copying.done % 200 === 0) await new Promise((r) => setImmediate(r)); // let the pages answer
+      }
+      writeJson(path.join(dest, '.photoapp', 'index.json'), index);
+    } finally {
+      copying = null;
+    }
+    const photos = Object.keys(index.photos || {}).length;
+    config.backupCopy = { to: dest, at: now().toISOString(), photos, copied: photosCopied, failed: failed.length };
+    saveConfig();
+    for (const line of failed.slice(0, 10)) say(`  - ${line}`);
+    say(`Backup copied to ${dest}: ${copyText(config.backupCopy)}`);
+    return config.backupCopy;
+  }
+
+  // Whether to suggest a copy: never made though old photos were added,
+  // old photos added since, or the last one over 30 days old. Null if not.
+  function copyAdvice() {
+    const c = config.backupCopy;
+    const imported = config.lastImport && config.lastImport.copied > 0 ? config.lastImport.at : null;
+    if (!c) {
+      return imported
+        ? "Old photos you've added are only in this backup. Keep a copy on another drive: right-click the icon → 'Copy Backup to a Drive'."
+        : null;
+    }
+    if (imported && imported > c.at) return "Old photos were added since the backup was last copied: copy it again ('Copy Backup to a Drive').";
+    if (now().getTime() - Date.parse(c.at) > 30 * 24 * 60 * 60 * 1000) return "The backup's copy is over a month old: copy it again ('Copy Backup to a Drive').";
+    return null;
+  }
+
   // ── HTTPS (the phone) ──
   async function handle(req, res) {
     let counted = false;
@@ -540,6 +973,10 @@ function createReceiver({
       if (route === 'POST /v1/inventory') return send(res, 200, inventory(phoneId, await readJsonBody(req)));
       if (route === 'PUT /v1/file') return send(res, 200, await receiveFile(phoneId, req, url));
       if (route === 'POST /v1/finish') return send(res, 200, await finish(phoneId, await readJsonBody(req)));
+      if (route === 'GET /v1/old') return send(res, 200, oldOverview(phoneId));
+      if (route === 'POST /v1/old/batch') return send(res, 200, oldBatch(phoneId, await readJsonBody(req)));
+      if (route === 'GET /v1/old/file') return await oldFile(phoneId, res, url);
+      if (route === 'POST /v1/old/done') return send(res, 200, oldDone(phoneId, await readJsonBody(req)));
       throw fail(404, 'not found');
     } catch (e) {
       if (!e.status || e.status === 503) say(e.status ? e.message : `Receiver error: ${e.message}`);
@@ -568,6 +1005,11 @@ function createReceiver({
       busy: isBusy,
       phone: isBusy && active ? active.phone : null,
       lastBackup: config.lastBackup ? { ...config.lastBackup, text: backupText(config.lastBackup) } : null,
+      importing,
+      lastImport: config.lastImport ? { ...config.lastImport, text: importText(config.lastImport) } : null,
+      copying,
+      backupCopy: config.backupCopy ? { ...config.backupCopy, text: copyText(config.backupCopy) } : null,
+      copyAdvice: copyAdvice(),
       phoneCount: Object.keys(config.phones).length,
       phones: Object.entries(config.phones).map(([id, p]) => ({ id, name: p.name, pairedAt: p.pairedAt, lastSeenAt: p.lastSeenAt })),
       recent: recent.slice(-15).reverse(),
@@ -594,7 +1036,13 @@ form.inline{display:inline;margin-left:8px}form.inline button{background:none;bo
 
   function statusPage() {
     const s = status();
-    const state = s.busy
+    const state = s.importing
+      ? `<p class="state busy">● Adding old photos from ${esc(s.importing.from)}: ${s.importing.done || 0} of ${
+          s.importing.total || '…'
+        }…</p>`
+      : s.copying
+      ? `<p class="state busy">● Copying the backup to ${esc(s.copying.to)}: ${s.copying.done} of ${s.copying.total} files…</p>`
+      : s.busy
       ? `<p class="state busy">● Backing up from ${esc(s.phone || 'a phone')}…</p>`
       : s.problem
         ? `<p class="state warn">● ${esc(s.problem)}</p>`
@@ -616,7 +1064,7 @@ form.inline{display:inline;margin-left:8px}form.inline button{background:none;bo
       ? `<ul class="log">${s.recent.map((r) => `<li><span>${esc(when(r.at))}</span>${esc(r.text)}</li>`).join('')}</ul>`
       : '<p class="muted">Nothing yet.</p>';
     const footer = background
-      ? `${APP_NAME} runs in the background. Right-click its icon by the clock for 'Pair a Phone', 'Change Backup Folder', 'Start with Windows' or 'Quit'. Its log: %APPDATA%\\PhotoApp\\receiver.log.`
+      ? `${APP_NAME} runs in the background. Right-click its icon by the clock for 'Open Timeline', 'Pair a Phone', 'Add Old Photos from a Folder', 'Copy Backup to a Drive', 'Change Backup Folder', 'Start with Windows' or 'Quit'. Its log: %APPDATA%\\PhotoApp\\receiver.log.`
       : 'Running in a window: close the window to stop the receiver.';
     return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="10">
 <title>${APP_NAME}</title><style>${STYLE}</style></head><body>
@@ -626,7 +1074,11 @@ ${state}
 <dt>This PC</dt><dd>${esc(s.pcName)} (${esc(s.addresses.join(', ') || 'no network found')}), port ${s.port}</dd>
 <dt>Backup Folder</dt><dd>${esc(s.folder || 'not chosen yet')}</dd>
 <dt>Last Backup</dt><dd>${last}</dd>
+<dt>Timeline</dt><dd><a href="/timeline">Open your timeline</a></dd>
+${s.lastImport ? `<dt>Old Photos Added</dt><dd>${esc(when(s.lastImport.at))} from ${esc(s.lastImport.from)}: ${esc(s.lastImport.text)}</dd>` : ''}
+<dt>Copy of the Backup</dt><dd>${s.backupCopy ? `${esc(s.backupCopy.to)} · ${esc(when(s.backupCopy.at))}: ${esc(s.backupCopy.text)}` : 'None yet'}</dd>
 </dl>
+${s.copyAdvice ? `<p class="warn">${esc(s.copyAdvice)}</p>` : ''}
 <h2>Phones</h2>
 ${phones}
 <a class="button" href="/pair">Pair a Phone</a>
@@ -679,11 +1131,32 @@ ${phones.length ? `<p>Paired: ${phones.map(esc).join(', ')}</p>` : ''}
     if (phone) {
       delete config.phones[form.phone];
       saveConfig();
+      dropPhoneFiles(form.phone);
       if (active && active.phoneId === form.phone) active = null;
       say(`Forgot ${phone.name} (paired ${when(phone.pairedAt)}): it needs to pair again to back up.`);
     }
     res.writeHead(303, { location: '/' });
     res.end();
+  }
+
+  // This PC's Do Not Show list for its timeline page (the phone has its own;
+  // the user's call, 2026-10-23), kept in the settings. Only from the
+  // timeline page: same origin, its token. Body { t, hide: [term] }.
+  async function setTimelineHide(req, res) {
+    const p = pageServer.address().port;
+    const origin = req.headers.origin;
+    if (origin && origin !== `http://127.0.0.1:${p}` && origin !== `http://localhost:${p}`) {
+      send(res, 403, { error: 'not from this page' });
+      return;
+    }
+    const body = await readJsonBody(req);
+    if (!body || body.t !== formToken || !Array.isArray(body.hide)) {
+      send(res, 403, { error: 'not from this page' });
+      return;
+    }
+    config.timelineHide = cleanHideList(body.hide.slice(0, 100).map((t) => String(t).slice(0, 80)));
+    saveConfig();
+    send(res, 200, { hide: config.timelineHide });
   }
 
   function pages(req, res) {
@@ -696,6 +1169,45 @@ ${phones.length ? `<p>Paired: ${phones.map(esc).join(', ')}</p>` : ''}
     if (req.method === 'GET' && url.pathname === '/') return sendHtml(res, statusPage());
     if (req.method === 'GET' && url.pathname === '/pair') return sendHtml(res, pairingPage());
     if (req.method === 'GET' && url.pathname === '/api/status') return send(res, 200, status());
+    // The timeline (Step 26): view-only, from the backup folder.
+    if (req.method === 'GET' && url.pathname === '/timeline') return sendHtml(res, timelinePage(APP_NAME, formToken));
+    if (req.method === 'GET' && url.pathname === '/timeline/data') {
+      const problem = folderProblem();
+      if (problem) return send(res, 503, { error: problem });
+      try {
+        const q = url.searchParams;
+        return send(
+          res,
+          200,
+          timelineData(destination(), {
+            includeNotable: q.get('notable') === '1',
+            group: q.get('group') || 'day',
+            search: (q.get('q') || '').slice(0, 200),
+            hide: config.timelineHide || [],
+          })
+        );
+      } catch (e) {
+        return send(res, 500, { error: e.message });
+      }
+    }
+    if (req.method === 'GET' && url.pathname === '/timeline/photo') {
+      if (folderProblem()) {
+        res.writeHead(404);
+        res.end();
+        return undefined;
+      }
+      sendTimelinePhoto(destination(), url.searchParams.get('hash'), res).catch(() => {
+        if (!res.headersSent) res.writeHead(500);
+        res.end();
+      });
+      return undefined;
+    }
+    if (req.method === 'POST' && url.pathname === '/timeline/hide') {
+      setTimelineHide(req, res).catch((e) => {
+        if (!res.headersSent) send(res, e.status || 400, { error: e.message });
+      });
+      return undefined;
+    }
     if (req.method === 'POST' && url.pathname === '/forget') {
       forgetPhone(req, res).catch(() => {
         if (!res.headersSent) res.writeHead(400);
@@ -749,6 +1261,8 @@ ${phones.length ? `<p>Paired: ${phones.map(esc).join(', ')}</p>` : ''}
     whenIdle,
     status,
     isFinishing: () => finishing,
+    importFolder,
+    copyBackup,
     pairingPayload,
     currentPairing,
     spkiSha256: config.spkiSha256,
@@ -868,9 +1382,24 @@ if (require.main === module) {
     };
     process.on('SIGINT', () => shutdown('Ctrl+C.'));
     if (args.background) {
-      // The tray icon writes "quit"; if the tray itself goes, stdin closes.
+      // The tray icon writes lines: "quit", or "import <folder>" ('Add Old
+      // Photos from a Folder…'). If the tray itself goes, stdin closes.
       process.stdin.setEncoding('utf8');
-      process.stdin.on('data', (d) => /\bquit\b/.test(d) && shutdown('Asked to quit.'));
+      let pending = '';
+      process.stdin.on('data', (d) => {
+        pending += d;
+        let i;
+        while ((i = pending.indexOf('\n')) !== -1) {
+          const line = pending.slice(0, i).trim();
+          pending = pending.slice(i + 1);
+          if (/^quit\b/.test(line)) shutdown('Asked to quit.');
+          else if (/^import /.test(line)) {
+            receiver.importFolder(line.slice(7).trim()).catch(() => {}); // said on the page and in the log
+          } else if (/^copy /.test(line)) {
+            receiver.copyBackup(line.slice(5).trim()).catch(() => {}); // said on the page and in the log
+          }
+        }
+      });
       process.stdin.on('end', () => shutdown('The tray icon has closed.'));
       process.stdin.on('error', () => shutdown('The tray icon has closed.'));
     }
@@ -880,4 +1409,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { createReceiver, isPrivateAddress, safeRel, isPhotoRel, parseArgs, backupText };
+module.exports = { createReceiver, isPrivateAddress, safeRel, isPhotoRel, parseArgs, backupText, importText };

@@ -10,14 +10,19 @@
 
   - Backs up ALL photos (not videos) from the phone's DCIM, Pictures and
     Download folders; PhotoApp's JSON sidecars ride along for tagged photos.
-  - Layout: <to>/YYYY/MM/<photo> with <photo>.json beside tagged ones
-    (e.g. IMG_1.jpg + IMG_1.jpg.json, so a RAW+JPEG pair keeps both).
+  - Layout: <to>/YYYY/MM/<photo>, and for tagged ones a tag file in
+    <to>/PicJot Tags/YYYY/MM/<photo>.json (e.g. IMG_1.jpg.json, so a RAW+JPEG
+    pair keeps both; beside the photo until 2026-10-22, moved once).
   - Photos are identified by MD5 content hash: re-runs skip what's already
     backed up (even if renamed), name clashes get a short hash suffix, and
     every placed file is re-hashed before it counts.
   - Never deletes or changes anything on the phone; only adds a receipt file
     to the phone's sidecar folder listing what is now safely on the PC, and a
     small "tags synced" marker the app uses to show unsynced tag changes.
+  - Moments (timeline entries without a photo, Step 26) come as tag files
+    too ("kind": "moment") and are filed under their date:
+    PicJot Tags/YYYY/MM/Moment - <title> (<id>).json (index.moments says
+    where each is, so a changed date or title moves it).
   - Tags flow phone -> PC: an edited tag file replaces the PC copy; a
     "cleared" tag file (written by the app when all of a photo's tags are
     removed) deletes the PC copy. A tag file that is simply missing never
@@ -31,13 +36,20 @@ const path = require('path');
 const { spawn } = require('child_process');
 
 const { readExifDate } = require('./lib/exif');
-const { md5File, readHead, walk, readJson, writeJson, placeVerified } = require('./lib/files');
+const { takeoutJsonFor, readTakeout } = require('./lib/takeout');
+const { isMomentRecord, momentPathFor } = require('./lib/timeline');
+const { md5File, readHead, walk, readJson, writeJson, placeVerified, freeBytes: driveFree, sizeText } = require('./lib/files');
+
+// Room always left on the backup drive when copying a folder in.
+const SPACE_MARGIN = 200 * 1024 * 1024;
 const {
   isImage,
   isSidecarName,
   resolveMonth,
   destinationFor,
+  TAG_FOLDER,
   sidecarPathFor,
+  besideSidecarPathFor,
   legacySidecarPathFor,
   parseLeadingJson,
   mostCommonDir,
@@ -110,6 +122,33 @@ function listLocal(dir) {
     });
 }
 
+// Google Takeout .json files (not PicJot's "<md5>.json"), by folder:
+// Map "<folder>" -> Set of names. `rels` from walk().
+function jsonsByFolder(rels) {
+  const out = new Map();
+  for (const rel of rels) {
+    const name = path.posix.basename(rel);
+    if (!/\.json$/i.test(name) || isSidecarName(name)) continue;
+    const dir = path.posix.dirname(rel);
+    if (!out.has(dir)) out.set(dir, new Set());
+    out.get(dir).add(name);
+  }
+  return out;
+}
+
+// What Google Takeout's .json says about the photo at `rel` in folder `dir`
+// ({ takenTime, description }), or null.
+function takeoutFor(dir, rel, jsons) {
+  const folderRel = path.posix.dirname(rel);
+  const name = takeoutJsonFor(path.posix.basename(rel), jsons.get(folderRel) || new Set());
+  if (!name) return null;
+  try {
+    return readTakeout(fs.readFileSync(path.join(dir, fromPosix(folderRel), name), 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
 // ── The backup ────────────────────────────────────────────────────────────
 async function runBackup({
   to,
@@ -121,6 +160,8 @@ async function runBackup({
   push = pushToPhone,
   now = () => new Date(),
   over = 'USB', // how the phone is reached, for the log ('Wi-Fi' from pc/receiver.js)
+  onProgress = () => {}, // ({ done, total }) while photos are handled
+  freeBytes = driveFree, // free space on the backup drive (tests pass their own)
 }) {
   const meta = path.join(to, '.photoapp');
   const staging = path.join(meta, 'staging');
@@ -176,34 +217,49 @@ async function runBackup({
       if (!from) writeJson(pulledFile, pulled); // the phone pull reads this
     }
   }
-  // 0b) Tag files are named after the full photo file name since 2026-10-15
-  //     (IMG_1.jpg.json): before that, a RAW+JPEG pair shared IMG_1.json and
-  //     one overwrote the other. Rename old files that belong to their photo;
-  //     a tagged photo whose file was lost that way has its tag file copied
-  //     from the phone again (un-marked as pulled).
-  let renamedTags = 0;
+  // 0b) Tag files are in "PicJot Tags/", mirroring the month folders, since
+  //     2026-10-22 (the user's call); before, they were beside each photo:
+  //     <photo file>.json since 2026-10-15, and <photo name>.json before (where
+  //     a RAW+JPEG pair shared IMG_1.json and one overwrote the other). Old
+  //     files that belong to their photo are moved in (or deleted, when the
+  //     tag folder already has a newer one): every photo the first time
+  //     (`index.tagFolder` records it), then tagged ones. A tagged photo whose
+  //     tag file is missing has it copied from the phone again (un-marked as
+  //     pulled).
+  let movedTags = 0;
   let refetchTags = 0;
   if (!dryRun) {
+    const firstTime = index.tagFolder !== TAG_FOLDER;
     for (const [hash, e] of Object.entries(index.photos)) {
-      if (!e.tagged) continue;
+      if (!e.tagged && !firstTime) continue;
       const target = path.join(to, fromPosix(sidecarPathFor(e.path)));
-      if (fs.existsSync(target)) continue;
-      const legacy = path.join(to, fromPosix(legacySidecarPathFor(e.path)));
-      const rec = fs.existsSync(legacy) ? readJson(legacy, null) : null;
-      if (rec && rec.contentHash === hash) {
-        fs.renameSync(legacy, target);
-        renamedTags += 1;
-        continue;
+      let inPlace = fs.existsSync(target);
+      for (const old of [besideSidecarPathFor(e.path), legacySidecarPathFor(e.path)]) {
+        const file = path.join(to, fromPosix(old));
+        if (!fs.existsSync(file) || (readJson(file, null) || {}).contentHash !== hash) continue;
+        if (inPlace) {
+          fs.unlinkSync(file); // older than the one in the tag folder
+          continue;
+        }
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.renameSync(file, target);
+        inPlace = true;
+        e.tagged = true;
+        movedTags += 1;
       }
+      if (inPlace || !e.tagged) continue;
       delete e.tagged;
       for (const k of Object.keys(pulled)) if (k.endsWith(`/${hash}.json`)) delete pulled[k];
       refetchTags += 1;
     }
-    if (renamedTags || refetchTags) {
+    if (firstTime) index.tagFolder = TAG_FOLDER;
+    if (movedTags || refetchTags || firstTime) {
       writeJson(indexFile, index);
       if (!from) writeJson(pulledFile, pulled);
+    }
+    if (movedTags || refetchTags) {
       log(
-        `Renamed ${renamedTags} tag file(s) to the new <photo file>.json names` +
+        `Moved ${movedTags} tag file(s) into "${TAG_FOLDER}"` +
           (refetchTags ? `; ${refetchTags} will be copied from the phone again.` : '.')
       );
     }
@@ -215,9 +271,12 @@ async function runBackup({
   let phoneName = null;
   const errors = [];
 
+  // A folder of old photos (Step 26b): Google Takeout's .json files, by folder.
+  let takeoutJsons = null;
   if (from) {
     sourceDir = from;
     listing = listLocal(from);
+    takeoutJsons = jsonsByFolder(walk(from));
     log(`Source: ${from} (${listing.length} photos/sidecars)`);
   } else {
     // Plain ASCII: the Windows console mangles typographic characters.
@@ -287,6 +346,7 @@ async function runBackup({
   //    and reported instead of waiting forever; the app re-hashes and replaces
   //    them once it has photo-location access.
   const sidecars = new Map();
+  const moments = new Map(); // id -> { record, rel }: Moments (Step 26)
   for (const f of toProcess.filter((x) => x.kind === 'sidecar' && pending(x))) {
     // Tolerates leftover bytes after the record (see parseLeadingJson).
     let parsed = null;
@@ -297,7 +357,9 @@ async function runBackup({
     }
     const rec = parsed && parsed.value;
     processed.add(f.rel);
-    if (!rec || rec.hashAlgorithm !== 'md5' || !/^[0-9a-f]{32}$/.test(rec.contentHash || '')) {
+    if (isMomentRecord(rec)) {
+      moments.set(rec.id, { record: rec, rel: f.rel });
+    } else if (!rec || rec.hashAlgorithm !== 'md5' || !/^[0-9a-f]{32}$/.test(rec.contentHash || '')) {
       stats.ignoredJson += 1;
     } else if (rec.hashSource === 'redacted') {
       stats.redacted += 1;
@@ -319,7 +381,27 @@ async function runBackup({
   }
 
   // 2) Photos (none in tags-only mode: the listing has tag files only).
-  for (const f of toProcess.filter((x) => x.kind === 'image')) {
+  //    Progress goes to onProgress({ done, total }). Copying a folder in
+  //    (`from`) stops when the backup drive would fall below SPACE_MARGIN:
+  //    what's left is reported (adding the folder again carries on).
+  const photosToDo = toProcess.filter((x) => x.kind === 'image');
+  let photosDone = 0;
+  let noRoom = null;
+  // The index is saved as photos are placed (every 25, or 20 seconds), not
+  // only at the end: a long run cut short (the PC turned off) keeps what it
+  // placed. And a photo already in place from such a run is taken over
+  // rather than copied again under another name.
+  let unsaved = 0;
+  let savedAt = Date.now();
+  const saveAsWeGo = () => {
+    if (++unsaved < 25 && Date.now() - savedAt < 20000) return;
+    writeJson(indexFile, index);
+    unsaved = 0;
+    savedAt = Date.now();
+  };
+  let recovered = 0;
+  for (const f of photosToDo) {
+    onProgress({ done: photosDone++, total: photosToDo.length });
     const src = path.join(sourceDir, fromPosix(f.rel));
     if (!fs.existsSync(src)) continue; // not staged (copy failed) — retried next run
     try {
@@ -330,31 +412,56 @@ async function runBackup({
         stats.present += 1;
         if (!from) fs.unlinkSync(src); // staged duplicate no longer needed
       } else {
+        if (from && freeBytes(to) < size + SPACE_MARGIN) {
+          noRoom = { left: photosToDo.length - photosDone + 1, free: freeBytes(to) };
+          break;
+        }
         const sc = sidecars.get(hash);
-        const head = /\.jpe?g$/i.test(src) ? readHead(src) : null;
+        const takeout = takeoutJsons ? takeoutFor(from, f.rel, takeoutJsons) : null;
         const month = resolveMonth({
           sidecarCreationTime: sc && sc.record.creationTime,
-          exifDate: head ? readExifDate(head) : null,
+          exifDate: readExifDate(readHead(src)), // JPEG, and RAW / HEIC from imports
+          takeoutTime: takeout && takeout.takenTime,
           fileName: path.basename(src),
           phoneModified: f.modified,
         });
-        const destRel = toPosix(
-          destinationFor(month, path.basename(src), hash, (rel) => {
-            const owner = pathOwner.get(toPosix(rel));
-            return (owner && owner !== hash) || (!owner && fs.existsSync(path.join(to, rel)));
-          })
-        );
-        const ok = await placeVerified(src, path.join(to, fromPosix(destRel)), hash, { move: !from });
-        if (!ok) throw new Error('verification failed after copy');
+        // Already in place from a run cut short (not in the index, same bytes)?
+        let destRel = null;
+        for (const rel of [destinationFor(month, path.basename(src), hash), destinationFor(month, path.basename(src), hash, () => true)]) {
+          const file = path.join(to, fromPosix(rel));
+          if (!pathOwner.get(rel) && fs.existsSync(file) && fs.statSync(file).size === size && (await md5File(file)) === hash) {
+            destRel = rel;
+            break;
+          }
+        }
+        if (destRel) {
+          recovered += 1;
+          if (!from) fs.unlinkSync(src); // staged copy no longer needed
+        } else {
+          destRel = toPosix(
+            destinationFor(month, path.basename(src), hash, (rel) => {
+              const owner = pathOwner.get(toPosix(rel));
+              return (owner && owner !== hash) || (!owner && fs.existsSync(path.join(to, rel)));
+            })
+          );
+          const ok = await placeVerified(src, path.join(to, fromPosix(destRel)), hash, { move: !from });
+          if (!ok) throw new Error('verification failed after copy');
+        }
         index.photos[hash] = {
           path: destRel,
           size,
           dateSource: month.source,
           from: f.rel,
           addedAt: now().toISOString(),
+          // The user's Google Photos description, offered as the caption
+          // when the photo is reviewed as an old photo, and Google's time
+          // taken (UTC), its date when it has no EXIF one.
+          ...(takeout && takeout.description ? { description: takeout.description.slice(0, 2000) } : {}),
+          ...(takeout && takeout.takenTime ? { takeoutTime: takeout.takenTime } : {}),
         };
         pathOwner.set(destRel, hash);
         stats.copied += 1;
+        saveAsWeGo();
       }
       processed.add(f.rel);
     } catch (e) {
@@ -363,7 +470,17 @@ async function runBackup({
     }
   }
 
-  // 3) Place sidecars beside their photos; unmatched ones wait in orphan-sidecars/
+  onProgress({ done: photosToDo.length, total: photosToDo.length });
+  if (recovered) log(`${recovered} photo(s) placed by an earlier run that was cut short were found in place and kept.`);
+  if (noRoom) {
+    stats.notCopied = noRoom.left;
+    errors.push(
+      `The backup drive is nearly full (${sizeText(noRoom.free)} free), so ${noRoom.left} photo(s) weren't added. ` +
+        'Make room on it, then add the folder again: the photos already added are skipped.'
+    );
+  }
+
+  // 3) Place sidecars in the tag folder; unmatched ones wait in orphan-sidecars/
   //    (their photo may be in a folder not yet backed up) and are retried each run.
   //    A waiting copy is deleted once a newer one for the same photo arrives from
   //    the phone (otherwise it could later overwrite the newer caption), or if
@@ -385,11 +502,12 @@ async function runBackup({
       if (sc.record.cleared === true) {
         if (photo) {
           const target = path.join(to, fromPosix(sidecarPathFor(photo.path)));
-          const legacy = path.join(to, fromPosix(legacySidecarPathFor(photo.path)));
-          const legacyIsOurs = fs.existsSync(legacy) && (readJson(legacy, null) || {}).contentHash === hash;
-          if (fs.existsSync(target) || legacyIsOurs) stats.tagsRemoved += 1;
+          const ours = [besideSidecarPathFor(photo.path), legacySidecarPathFor(photo.path)]
+            .map((rel) => path.join(to, fromPosix(rel)))
+            .filter((file) => fs.existsSync(file) && (readJson(file, null) || {}).contentHash === hash);
+          if (fs.existsSync(target) || ours.length) stats.tagsRemoved += 1;
           if (fs.existsSync(target)) fs.unlinkSync(target);
-          if (legacyIsOurs) fs.unlinkSync(legacy);
+          for (const file of ours) fs.unlinkSync(file);
           delete photo.tagged;
         }
         if (sc.orphanFile) fs.unlinkSync(path.join(orphanDir, sc.orphanFile));
@@ -398,6 +516,7 @@ async function runBackup({
         const body = JSON.stringify({ ...sc.record, photoFile: path.basename(photo.path) }, null, 2);
         const current = fs.existsSync(target) ? fs.readFileSync(target, 'utf8') : null;
         if (current !== body) {
+          fs.mkdirSync(path.dirname(target), { recursive: true });
           fs.writeFileSync(target, body);
           stats.sidecarsWritten += 1;
         }
@@ -411,6 +530,37 @@ async function runBackup({
       if (sc.rel) processed.add(sc.rel);
     } catch (e) {
       errors.push(`sidecar ${hash}: ${e.message}`);
+    }
+  }
+  // 3b) Moments (Step 26): each under its date in the tag folder; a cleared
+  //     one (deleted on the phone) is removed. index.moments: id -> where its
+  //     file is, so a new date or title moves it rather than leaving a copy.
+  index.moments = index.moments || {};
+  for (const [id, m] of moments) {
+    try {
+      const old = index.moments[id];
+      const oldFile = old ? path.join(to, fromPosix(old)) : null;
+      if (m.record.cleared === true) {
+        if (oldFile && fs.existsSync(oldFile)) {
+          fs.unlinkSync(oldFile);
+          stats.tagsRemoved += 1;
+        }
+        delete index.moments[id];
+        continue;
+      }
+      const rel = momentPathFor(m.record);
+      const target = path.join(to, fromPosix(rel));
+      const body = JSON.stringify(m.record, null, 2);
+      const current = fs.existsSync(target) ? fs.readFileSync(target, 'utf8') : null;
+      if (current !== body) {
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.writeFileSync(target, body);
+        stats.sidecarsWritten += 1;
+      }
+      if (old && old !== rel && oldFile && fs.existsSync(oldFile)) fs.unlinkSync(oldFile);
+      index.moments[id] = rel;
+    } catch (e) {
+      errors.push(`moment ${id}: ${e.message}`);
     }
   }
   stats.tagged = Object.values(index.photos).filter((p) => p.tagged).length;
@@ -602,4 +752,20 @@ if (require.main === module) {
     });
 }
 
-module.exports = { runBackup, parseArgs, listLocal };
+// Before a folder of old photos is added: how many photos it has, about how
+// many bytes they'd add (less those that look already backed up: the same
+// name and size as one in the index), and the room on the backup drive.
+function importEstimate(from, to, freeBytes = driveFree) {
+  const index = readJson(path.join(to, '.photoapp', 'index.json'), { photos: {} });
+  const known = new Set(Object.values(index.photos || {}).map((e) => `${path.posix.basename(e.path).toLowerCase()}|${e.size}`));
+  let photos = 0;
+  let bytes = 0;
+  for (const f of listLocal(from)) {
+    if (f.kind !== 'image') continue;
+    photos += 1;
+    if (!known.has(`${path.posix.basename(f.rel).toLowerCase()}|${f.size}`)) bytes += f.size;
+  }
+  return { photos, bytes, free: freeBytes(to), needed: bytes + SPACE_MARGIN };
+}
+
+module.exports = { runBackup, parseArgs, listLocal, importEstimate };

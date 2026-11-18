@@ -8,8 +8,9 @@ const http = require('http');
 const https = require('https');
 const crypto = require('crypto');
 
-const { createReceiver, isPrivateAddress, safeRel, isPhotoRel, backupText, parseArgs } = require('../receiver');
+const { createReceiver, isPrivateAddress, safeRel, isPhotoRel, backupText, importText, parseArgs } = require('../receiver');
 const { spkiSha256 } = require('../lib/cert');
+const { jpeg, jpegWithDate } = require('./jpegs');
 
 const quiet = () => {};
 const md5 = (b) => crypto.createHash('md5').update(b).digest('hex');
@@ -33,8 +34,8 @@ function getPage(url, host) {
 }
 
 // The phone's side of a request: HTTPS, the receiver's key pinned, JSON or
-// raw bytes. Resolves { status, body }.
-function call(port, pin, method, urlPath, { token, json, bytes, contentLength, headers: extra } = {}) {
+// raw bytes. Resolves { status, body }, or with `raw` { status, headers, buf }.
+function call(port, pin, method, urlPath, { token, json, bytes, contentLength, headers: extra, raw } = {}) {
   return new Promise((resolve, reject) => {
     const headers = { ...extra };
     if (token) headers.authorization = `Bearer ${token}`;
@@ -61,9 +62,13 @@ function call(port, pin, method, urlPath, { token, json, bytes, contentLength, h
           reject(new Error('pin mismatch'));
           return;
         }
-        let text = '';
-        res.on('data', (d) => (text += d));
-        res.on('end', () => resolve({ status: res.statusCode, body: text ? JSON.parse(text) : null }));
+        const chunks = [];
+        res.on('data', (d) => chunks.push(d));
+        res.on('end', () => {
+          const buf = Buffer.concat(chunks);
+          if (raw) resolve({ status: res.statusCode, headers: res.headers, buf });
+          else resolve({ status: res.statusCode, body: buf.length ? JSON.parse(buf.toString('utf8')) : null });
+        });
       }
     );
     req.on('error', reject);
@@ -72,10 +77,10 @@ function call(port, pin, method, urlPath, { token, json, bytes, contentLength, h
   });
 }
 
-async function setup() {
+async function setup(extra = {}) {
   const configDir = tmp();
   const to = tmp();
-  const receiver = createReceiver({ configDir, to, port: 0, host: '127.0.0.1', pcName: 'TEST-PC', log: quiet, addresses: () => ['192.168.1.20'] });
+  const receiver = createReceiver({ configDir, to, port: 0, host: '127.0.0.1', pcName: 'TEST-PC', log: quiet, addresses: () => ['192.168.1.20'], ...extra });
   const { port, pageUrl } = await receiver.start();
   const pin = receiver.spkiSha256;
   const api = (method, p, opts) => call(port, pin, method, p, opts);
@@ -137,7 +142,7 @@ test('pairing: one-time code, then a token; the QR text carries the pin', async 
     assert.strictEqual(statusPage.status, 200);
     assert.match(statusPage.text, /Galaxy/);
     assert.match(statusPage.text, /Pair a Phone/);
-    assert.match(statusPage.text, /<title>PicJot WiFi Backup Manager<\/title>/);
+    assert.match(statusPage.text, /<title>PicJot<\/title>/);
   } finally {
     await receiver.stop();
   }
@@ -230,6 +235,47 @@ test('Forget on the status page unpairs a phone; other pages can\'t do it', asyn
   }
 });
 
+// A JSON POST to the local pages: { status, body }.
+function postJson(url, json, headers = {}) {
+  const u = new URL(url);
+  const body = JSON.stringify(json);
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      { host: u.hostname, port: u.port, path: u.pathname, method: 'POST', headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body), ...headers } },
+      (res) => {
+        const chunks = [];
+        res.on('data', (d) => chunks.push(d));
+        res.on('end', () => resolve({ status: res.statusCode, body: JSON.parse(Buffer.concat(chunks).toString('utf8') || 'null') }));
+      }
+    );
+    req.on('error', reject);
+    req.end(body);
+  });
+}
+
+test("the timeline page's own Do Not Show list: kept in the settings, changed only from that page", async () => {
+  const { receiver, pageUrl, configDir } = await setup();
+  try {
+    const page = (await getPage(`${pageUrl}timeline`)).text;
+    const token = JSON.parse(/const TOKEN = ("[^"]*");/.exec(page)[1]);
+    const port = new URL(pageUrl).port;
+    const url = `${pageUrl}timeline/hide`;
+
+    assert.strictEqual((await postJson(url, { t: 'guess', hide: ['work'] })).status, 403, 'wrong token');
+    assert.strictEqual((await postJson(url, { t: token, hide: ['work'] }, { origin: 'https://evil.example' })).status, 403, 'another site');
+    assert.strictEqual((await postJson(url, { t: token, hide: 'work' })).status, 403, 'not a list');
+
+    const ok = await postJson(url, { t: token, hide: ['#Work', 'work', ' private '] }, { origin: `http://127.0.0.1:${port}` });
+    assert.strictEqual(ok.status, 200);
+    assert.deepStrictEqual(ok.body.hide, ['Work', 'private']);
+    assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(configDir, 'receiver.json'), 'utf8')).timelineHide, ['Work', 'private']);
+    const data = JSON.parse((await getPage(`${pageUrl}timeline/data`)).text);
+    assert.deepStrictEqual(data.hide.terms, ['Work', 'private']);
+  } finally {
+    await receiver.stop();
+  }
+});
+
 test('the local pages refuse requests addressed to another name (DNS rebinding)', async () => {
   const { receiver, pageUrl } = await setup();
   try {
@@ -256,7 +302,7 @@ test('a pairing code expires after 10 minutes', async () => {
   }
 });
 
-test('a backup over Wi-Fi: list, send, finish; files filed, tags beside, receipt returned; then resumable and incremental', async () => {
+test('a backup over Wi-Fi: list, send, finish; files filed, tags in the tag folder, receipt returned; then resumable and incremental', async () => {
   const { to, receiver, api } = await setup();
   try {
     const token = await pairPhone(api, receiver);
@@ -305,7 +351,7 @@ test('a backup over Wi-Fi: list, send, finish; files filed, tags beside, receipt
     assert.strictEqual(fin.body.summary.copied, 2);
     assert.deepStrictEqual(fin.body.errors, []);
     assert.ok(fs.existsSync(path.join(to, '2026', '07', '20260720_154654.jpg')));
-    assert.ok(fs.existsSync(path.join(to, '2026', '07', '20260720_154654.jpg.json')), 'tag file beside the photo');
+    assert.ok(fs.existsSync(path.join(to, 'PicJot Tags', '2026', '07', '20260720_154654.jpg.json')), 'tag file in the tag folder');
     assert.ok(fs.existsSync(path.join(to, '2025', '03', 'shot.png')), 'dated by the phone\'s modified time');
     const receipt = JSON.parse(fin.body.receipt.text);
     assert.strictEqual(receipt.type, 'photoapp-backup-receipt');
@@ -336,7 +382,7 @@ test('a backup over Wi-Fi: list, send, finish; files filed, tags beside, receipt
       receiver.status().lastBackup.text,
       '0 new photos backed up, 2 already on the PC. Tags on the PC updated for 1 photo.'
     );
-    assert.match(fs.readFileSync(path.join(to, '2026', '07', '20260720_154654.jpg.json'), 'utf8'), /Lunch by the lake/);
+    assert.match(fs.readFileSync(path.join(to, 'PicJot Tags', '2026', '07', '20260720_154654.jpg.json'), 'utf8'), /Lunch by the lake/);
     // The same tags again: nothing to do, and it says that too.
     await api('POST', '/v1/inventory', { token, json: { files } });
     await api('POST', '/v1/finish', { token, json: tagJson(edited) });
@@ -423,5 +469,218 @@ test('keeps its certificate and paired phones across restarts', async () => {
     assert.strictEqual(inv.status, 200);
   } finally {
     await second.stop();
+  }
+});
+
+test('old photos (Step 26b): which ones, in batches, the picture, reviewed', async () => {
+  const { to, receiver, api } = await setup();
+  try {
+    const token = await pairPhone(api, receiver);
+    const put = (rel, buf) => {
+      const p = path.join(to, ...rel.split('/'));
+      fs.mkdirSync(path.dirname(p), { recursive: true });
+      fs.writeFileSync(p, buf);
+      return buf;
+    };
+    const a = put('2009/07/a.jpg', jpegWithDate('2009:07:14 15:22:10'));
+    const b = put('2026/10/b.jpg', Buffer.from('still on the phone'));
+    const preview = jpeg({ size: 30 * 1024 });
+    const c = put('2015/01/c.NEF', Buffer.concat([Buffer.from('MM\0*'), jpeg({ size: 500 }), preview, jpeg({ sof: 0xc3, size: 90000 })]));
+    const d = put('2012/05/d.jpg', Buffer.from('tagged on the PC'));
+    put('PicJot Tags/2012/05/d.jpg.json', JSON.stringify({ contentHash: md5(d), hashAlgorithm: 'md5', caption: 'x' }));
+    // Tagged before tag files moved into the tag folder (no backup since).
+    const d2 = put('2012/05/d2.jpg', Buffer.from('tagged on the PC, beside'));
+    put('2012/05/d2.jpg.json', JSON.stringify({ contentHash: md5(d2), hashAlgorithm: 'md5', caption: 'y' }));
+    const e = put('2011/03/e.jpg', Buffer.from('from a Google Takeout'));
+    put('2011/03/e.jpg.json', JSON.stringify({ title: 'e.jpg', photoTakenTime: { timestamp: '1300000000' } }));
+    const f = put('2010/06/f.heic', Buffer.from('heic bytes'));
+    const index = { version: 1, photos: {} };
+    for (const [rel, buf, from, description] of [
+      ['2009/07/a.jpg', a, 'old camera/a.jpg'],
+      ['2026/10/b.jpg', b, 'DCIM/Camera/b.jpg'],
+      ['2015/01/c.NEF', c],
+      ['2012/05/d.jpg', d],
+      ['2012/05/d2.jpg', d2],
+      ['2011/03/e.jpg', e, null, 'Snow day'],
+      ['2010/06/f.heic', f],
+    ]) {
+      index.photos[md5(buf)] = { path: rel, size: buf.length, ...(from ? { from } : {}), ...(description ? { description } : {}) };
+    }
+    index.photos[md5(e)].takeoutTime = '2011-03-13T07:06:40.000Z'; // Google's time taken, in UTC
+    put('.photoapp/index.json', JSON.stringify(index));
+
+    // Not before this phone's first Wi-Fi backup: the PC doesn't know what's on it.
+    const early = await api('GET', '/v1/old', { token });
+    assert.strictEqual(early.status, 409);
+    assert.match(early.body.error, /Back up over Wi-Fi once first/);
+
+    const inv = await api('POST', '/v1/inventory', { token, json: { files: [{ rel: 'DCIM/Camera/b.jpg', size: b.length }] } });
+    assert.strictEqual(inv.status, 200);
+
+    // b is on the phone, d and d2 are tagged; e's Takeout .json isn't a tag file.
+    const overview = await api('GET', '/v1/old', { token });
+    assert.deepStrictEqual(overview.body, {
+      total: 4,
+      years: [2015, 2011, 2010, 2009].map((year) => ({ year, count: 1 })),
+      reviewed: 0,
+    });
+
+    const batch = await api('POST', '/v1/old/batch', { token, json: { count: 2 } });
+    assert.deepStrictEqual(batch.body.photos.map((p) => p.path), ['2015/01/c.NEF', '2011/03/e.jpg']);
+    assert.strictEqual(batch.body.photos[0].kind, 'raw');
+    assert.strictEqual(batch.body.photos[1].caption, 'Snow day', 'the Takeout description, to start from');
+    assert.ok(!('caption' in batch.body.photos[0]));
+    assert.strictEqual(batch.body.photos[0].taken, null, 'a RAW file without an EXIF date: only its month');
+    const t = new Date('2011-03-13T07:06:40.000Z');
+    const two = (n) => String(n).padStart(2, '0');
+    assert.strictEqual(
+      batch.body.photos[1].taken,
+      `${t.getFullYear()}-${two(t.getMonth() + 1)}-${two(t.getDate())}T${two(t.getHours())}:${two(t.getMinutes())}:${two(t.getSeconds())}`,
+      "no EXIF date: Google's, in the PC's time"
+    );
+    assert.strictEqual(batch.body.remaining, 4);
+    const oldest = await api('POST', '/v1/old/batch', { token, json: { count: 1, order: 'oldest' } });
+    assert.deepStrictEqual(oldest.body.photos, [
+      { hash: md5(a), name: 'a.jpg', path: '2009/07/a.jpg', year: 2009, month: 7, taken: '2009-07-14T15:22:10', size: a.length, kind: 'jpeg' },
+    ]);
+    const y2010 = await api('POST', '/v1/old/batch', { token, json: { year: 2010 } });
+    assert.deepStrictEqual(y2010.body.photos.map((p) => p.kind), ['heic']);
+
+    // The pictures: a JPEG as it is, the JPEG inside a RAW file.
+    const fileOf = (hash) => api('GET', `/v1/old/file?hash=${hash}`, { token, raw: true });
+    const pa = await fileOf(md5(a));
+    assert.strictEqual(pa.status, 200);
+    assert.ok(pa.buf.equals(a));
+    assert.strictEqual(pa.headers['content-type'], 'image/jpeg');
+    const pc = await fileOf(md5(c));
+    assert.strictEqual(pc.status, 200);
+    assert.ok(pc.buf.equals(preview));
+    assert.strictEqual(pc.headers['x-picjot-kind'], 'raw');
+    assert.strictEqual((await fileOf('0'.repeat(32))).status, 404);
+    assert.strictEqual((await api('GET', '/v1/old/file?hash=zz', { token, raw: true })).status, 404);
+
+    // Reviewed (or skipped) ones aren't offered again.
+    const done = await api('POST', '/v1/old/done', {
+      token,
+      json: { photos: [{ hash: md5(c), skipped: true }, { hash: md5(a) }, { hash: 'not-a-photo' }] },
+    });
+    assert.deepStrictEqual(done.body, { ok: true, added: 2, remaining: 2 });
+    const saved = JSON.parse(fs.readFileSync(path.join(to, '.photoapp', 'old-photos.json'), 'utf8'));
+    assert.strictEqual(saved.done[md5(c)].skipped, true);
+    assert.strictEqual(saved.done[md5(a)].skipped, false);
+    const after = await api('GET', '/v1/old', { token });
+    assert.strictEqual(after.body.total, 2);
+    assert.strictEqual(after.body.reviewed, 2);
+
+    // Unpaired phones get nothing.
+    assert.strictEqual((await api('GET', '/v1/old')).status, 401);
+  } finally {
+    await receiver.stop();
+  }
+});
+
+test("adding a folder of old photos: copied in, then offered as old photos", async () => {
+  const { to, receiver, api, pageUrl } = await setup();
+  try {
+    const token = await pairPhone(api, receiver);
+    const src = tmp();
+    const photo = jpegWithDate('2008:12:24 18:00:00');
+    fs.mkdirSync(path.join(src, 'Christmas 2008'), { recursive: true });
+    fs.writeFileSync(path.join(src, 'Christmas 2008', 'IMG_0001.jpg'), photo);
+
+    // Not the backup folder, nor one holding it; not a missing folder.
+    await assert.rejects(receiver.importFolder(to), /other than the backup folder/);
+    await assert.rejects(receiver.importFolder(path.dirname(to)), /other than the backup folder/);
+    await assert.rejects(receiver.importFolder(path.join(src, 'nope')), /isn't a folder/);
+    // Why it didn't happen shows on the page, not only in the log.
+    assert.match((await getPage(pageUrl)).text, /Couldn(&#39;|')t add old photos: Choose a folder other than the backup folder/);
+
+    const r = await receiver.importFolder(src);
+    assert.strictEqual(r.copied, 1);
+    assert.ok(fs.existsSync(path.join(to, '2008', '12', 'IMG_0001.jpg')));
+    assert.ok(fs.existsSync(path.join(src, 'Christmas 2008', 'IMG_0001.jpg')), 'the original stays');
+    assert.strictEqual(importText(r), '1 photo added.');
+    assert.strictEqual(importText({ copied: 2, present: 3, failed: 1 }), "2 photos added, 3 already in the backup. 1 photo couldn't be copied (see 'Recent Activity').");
+    assert.strictEqual(importText({ copied: 5, notCopied: 7 }), '5 photos added. 7 photos not added: the backup drive is nearly full.');
+    const page = await getPage(pageUrl);
+    assert.match(page.text, /Old Photos Added/);
+
+    // Again: nothing new.
+    assert.strictEqual((await receiver.importFolder(src)).present, 1);
+
+    await api('POST', '/v1/inventory', { token, json: { files: [] } });
+    const overview = await api('GET', '/v1/old', { token });
+    assert.deepStrictEqual(overview.body.years, [{ year: 2008, count: 1 }]);
+  } finally {
+    await receiver.stop();
+  }
+});
+
+test('adding a folder that won\'t fit: refused before anything is copied, and said so on the page', async () => {
+  const { to, receiver, pageUrl } = await setup({ freeBytes: () => 50 * 1024 * 1024 });
+  try {
+    const src = tmp();
+    fs.writeFileSync(path.join(src, 'IMG_0001.jpg'), jpegWithDate('2008:12:24 18:00:00'));
+    await assert.rejects(receiver.importFolder(src), /Not enough room: the photo in .* needs about 1 MB, and the backup drive has 52 MB free/);
+    assert.ok(!fs.existsSync(path.join(to, '2008')), 'nothing copied');
+    assert.match((await getPage(pageUrl)).text, /Not enough room/);
+  } finally {
+    await receiver.stop();
+  }
+});
+
+test('copying the backup to another drive: all of it, then only what is new; nothing deleted from the copy; refused on the same drive or another backup', async () => {
+  const copyRoot = tmp();
+  // Stand-in drives: the copy's folder is "E:", everything else "C:".
+  const driveOf = (p) => (path.resolve(p).startsWith(copyRoot) ? 'E:' : 'C:');
+  const { to, receiver, pageUrl } = await setup({ driveOf });
+  try {
+    const src = tmp();
+    fs.writeFileSync(path.join(src, 'IMG_0001.jpg'), jpegWithDate('2008:12:24 18:00:00'));
+    fs.writeFileSync(path.join(src, 'IMG_0002.jpg'), jpegWithDate('2009:07:14 12:00:00'));
+    await receiver.importFolder(src);
+    fs.mkdirSync(path.join(to, 'PicJot Tags', '2008', '12'), { recursive: true });
+    fs.writeFileSync(path.join(to, 'PicJot Tags', '2008', '12', 'IMG_0001.jpg.json'), '{"caption":"Christmas"}');
+    assert.match((await getPage(pageUrl)).text, /only in this backup. Keep a copy on another drive/);
+
+    // Refused: inside the backup, the same drive, another PicJot backup.
+    await assert.rejects(receiver.copyBackup(path.join(to, '2008')), /outside the backup folder/);
+    await assert.rejects(receiver.copyBackup(tmp()), /on another drive/);
+    const stick = path.join(copyRoot, 'stick');
+    fs.mkdirSync(path.join(stick, '.photoapp'), { recursive: true });
+    await assert.rejects(receiver.copyBackup(stick), /another PicJot backup/);
+    fs.rmSync(stick, { recursive: true });
+
+    // The first copy: all of it, into the empty folder chosen.
+    let r = await receiver.copyBackup(copyRoot);
+    assert.strictEqual(r.to, copyRoot);
+    assert.strictEqual(r.photos, 2);
+    assert.strictEqual(r.copied, 2);
+    assert.ok(fs.existsSync(path.join(copyRoot, '2008', '12', 'IMG_0001.jpg')));
+    assert.strictEqual(fs.readFileSync(path.join(copyRoot, 'PicJot Tags', '2008', '12', 'IMG_0001.jpg.json'), 'utf8'), '{"caption":"Christmas"}');
+    assert.deepStrictEqual(
+      JSON.parse(fs.readFileSync(path.join(copyRoot, '.photoapp', 'index.json'), 'utf8')).photos,
+      JSON.parse(fs.readFileSync(path.join(to, '.photoapp', 'index.json'), 'utf8')).photos
+    );
+    assert.ok(fs.existsSync(path.join(copyRoot, '.photoapp', 'picjot-copy.json')));
+    const page = (await getPage(pageUrl)).text;
+    assert.match(page, /Copy of the Backup/);
+    assert.doesNotMatch(page, /Keep a copy on another drive/);
+
+    // Again: nothing new.
+    r = await receiver.copyBackup(copyRoot);
+    assert.strictEqual(r.copied, 0);
+
+    // A tag file removed from the backup stays on the copy; a new photo is copied.
+    fs.rmSync(path.join(to, 'PicJot Tags', '2008', '12', 'IMG_0001.jpg.json'));
+    fs.writeFileSync(path.join(src, 'IMG_0003.jpg'), jpegWithDate('2010:01:01 09:00:00'));
+    await receiver.importFolder(src);
+    assert.match((await getPage(pageUrl)).text, /added since the backup was last copied/);
+    r = await receiver.copyBackup(copyRoot);
+    assert.strictEqual(r.photos, 3);
+    assert.strictEqual(r.copied, 1);
+    assert.ok(fs.existsSync(path.join(copyRoot, 'PicJot Tags', '2008', '12', 'IMG_0001.jpg.json')), 'nothing deleted from the copy');
+  } finally {
+    await receiver.stop();
   }
 });

@@ -1,5 +1,5 @@
-// PicJot WiFi Backup Manager (called PicJot Receiver until 2026-10-20): the
-// Wi-Fi receiver's icon by the clock (roadmap Step 33, stage 2;
+// PicJot for Windows (called PicJot Receiver until 2026-10-20, then PicJot
+// WiFi Backup Manager until 2026-10-23): the receiver's icon by the clock (roadmap Step 33, stage 2;
 // docs/wifi-backup.md). It runs `node receiver.js --background` hidden, shows
 // the receiver's state, keeps the PC awake while a phone backs up, and starts
 // with Windows when asked (HKCU Run key).
@@ -9,21 +9,22 @@
 // Windows program rather than a script, opens no console window at login.
 // That compiler only knows C# 5: no $"..." strings, no ?. operator.
 // The installer (Step 27b, tools/build-pc.ps1) ships it built, next to
-// "PicJot WiFi Receiver.exe" (the receiver with Node.js built in), which it
+// "PicJot Server.exe" (the receiver with Node.js built in), which it
 // then runs instead of `node receiver.js`.
 //
-//   "PicJot WiFi Backup Manager.exe"          start (or, if running, open its
+//   "PicJot.exe"                              start (or, if running, open its
 //                                             page); the first start on a PC
 //                                             also turns on Start with Windows
 //                                             (%APPDATA%\PhotoApp\receiver-tray.json
 //                                             remembers that it happened)
-//   "PicJot WiFi Backup Manager.exe" --quit   ask the running one to quit
+//   "PicJot.exe" --quit                       ask the running one to quit
 //                                   --quit --wait  ... and wait until it has
 //                                             (the installer, before it
 //                                             replaces or removes the files)
 //
 // The mutex and quit event keep their old names, so this program and the old
-// "PicJot Receiver.exe" can stop each other.
+// ones ("PicJot Receiver.exe", "PicJot WiFi Backup Manager.exe") can stop
+// each other.
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -41,7 +42,7 @@ using Microsoft.Win32;
 
 // Its name in Task Manager and in the file's properties (the installer's
 // build adds the version).
-[assembly: AssemblyTitle("PicJot WiFi Backup Manager")]
+[assembly: AssemblyTitle("PicJot")]
 [assembly: AssemblyProduct("PicJot")]
 
 static class Program
@@ -100,13 +101,17 @@ class Tray
     public const string QuitEventName = @"Local\PicJotReceiverQuit";
     public const string StatusUrl = "http://127.0.0.1:47824/";
     const string PairUrl = StatusUrl + "pair";
+    // The timeline (Step 26), from the backup folder: view-only.
+    const string TimelineUrl = StatusUrl + "timeline";
     const string ApiUrl = StatusUrl + "api/status";
-    public const string AppName = "PicJot WiFi Backup Manager";
+    public const string AppName = "PicJot";
     const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
     const string RunName = AppName;
-    const string OldRunName = "PicJot Receiver"; // its Start with Windows entry until 2026-10-20
+    // Its Start with Windows entries under the old names (until 2026-10-20,
+    // and until 2026-10-23): moved over to the current one.
+    static readonly string[] OldRunNames = { "PicJot Receiver", "PicJot WiFi Backup Manager" };
     // The receiver with Node.js built in, installed beside this program.
-    const string ReceiverExe = "PicJot WiFi Receiver.exe";
+    const string ReceiverExe = "PicJot Server.exe";
     const int ExitPortInUse = 3;
 
     [DllImport("kernel32.dll")]
@@ -126,7 +131,7 @@ class Tray
     Process node; // the receiver, packaged or `node receiver.js`
     string nodePath; // null when packaged
     bool quitting, awake, baselineSet, pairShown, stopped;
-    string seenBackupAt, seenProblem;
+    string seenBackupAt, seenProblem, seenImportAt, seenCopyAt;
     int restarts;
     DateTime restartWindow = DateTime.MinValue;
 
@@ -207,7 +212,10 @@ class Tray
         ToolStripMenuItem open = new ToolStripMenuItem("Open " + AppName, null, delegate { OpenUrl(StatusUrl); });
         open.Font = new Font(open.Font, FontStyle.Bold);
         menu.Items.Add(open);
+        menu.Items.Add(new ToolStripMenuItem("Open Timeline", null, delegate { OpenUrl(TimelineUrl); }));
         menu.Items.Add(new ToolStripMenuItem("Pair a Phone", null, delegate { OpenUrl(PairUrl); }));
+        menu.Items.Add(new ToolStripMenuItem("Add Old Photos from a Folder...", null, delegate { AddOldPhotos(); }));
+        menu.Items.Add(new ToolStripMenuItem("Copy Backup to a Drive...", null, delegate { CopyBackup(); }));
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(new ToolStripMenuItem("Change Backup Folder...", null, delegate { ChangeFolder(); }));
         startItem = new ToolStripMenuItem("Start with Windows");
@@ -336,7 +344,13 @@ class Tray
         bool busy = Bool(s, "busy");
         string problem = Str(s, "problem");
         SetAwake(busy);
-        if (busy)
+        Dictionary<string, object> lastImport = Dict(s, "lastImport");
+        Dictionary<string, object> backupCopy = Dict(s, "backupCopy");
+        string importAt = lastImport != null ? Str(lastImport, "at") : null;
+        string copyAt = backupCopy != null ? Str(backupCopy, "at") : null;
+        if (Dict(s, "importing") != null) SetText(AppName + ": adding old photos");
+        else if (Dict(s, "copying") != null) SetText(AppName + ": copying the backup");
+        else if (busy)
         {
             string phone = Str(s, "phone");
             SetText(AppName + ": backing up" + (phone != null ? " " + phone : ""));
@@ -353,6 +367,8 @@ class Tray
             baselineSet = true;
             seenBackupAt = at;
             seenProblem = problem;
+            seenImportAt = importAt;
+            seenCopyAt = copyAt;
             if (Int(s, "phoneCount") == 0 && !pairShown) { pairShown = true; OpenUrl(PairUrl); }
             if (problem != null) icon.ShowBalloonTip(10000, AppName, problem, ToolTipIcon.Warning);
             return;
@@ -363,9 +379,27 @@ class Tray
             string phone = Str(last, "phone");
             icon.ShowBalloonTip(8000, "Backup finished" + (phone != null ? ": " + phone : ""), Str(last, "text") ?? "", ToolTipIcon.Info);
         }
+        if (importAt != null && importAt != seenImportAt)
+        {
+            // Old photos added: and, if they're only in this backup, the copy.
+            seenImportAt = importAt;
+            string advice = Str(s, "copyAdvice");
+            icon.ShowBalloonTip(10000, "Old photos added", (Str(lastImport, "text") ?? "") + (advice != null ? " " + advice : ""), ToolTipIcon.Info);
+        }
+        if (copyAt != null && copyAt != seenCopyAt)
+        {
+            seenCopyAt = copyAt;
+            icon.ShowBalloonTip(8000, "Backup copied", (Str(backupCopy, "to") ?? "") + ": " + (Str(backupCopy, "text") ?? ""), ToolTipIcon.Info);
+        }
         if (problem != null && problem != seenProblem)
             icon.ShowBalloonTip(10000, AppName, problem, ToolTipIcon.Warning);
         seenProblem = problem;
+    }
+
+    static Dictionary<string, object> Dict(Dictionary<string, object> d, string k)
+    {
+        object v;
+        return d.TryGetValue(k, out v) ? v as Dictionary<string, object> : null;
     }
 
     static Dictionary<string, object> FetchStatus()
@@ -448,6 +482,11 @@ class Tray
 
     static string PickFolder(string start)
     {
+        return PickFolder(start, "Choose where PicJot should back up your photos (a folder on this PC or an attached drive)", true);
+    }
+
+    static string PickFolder(string start, string description, bool newFolderButton)
+    {
         using (Form owner = new Form())
         using (FolderBrowserDialog dlg = new FolderBrowserDialog())
         {
@@ -457,11 +496,66 @@ class Tray
             owner.Location = new Point(-2000, -2000);
             owner.Size = new Size(1, 1);
             owner.Show();
-            dlg.Description = "Choose where PicJot should back up your photos (a folder on this PC or an attached drive)";
-            dlg.ShowNewFolderButton = true;
+            dlg.Description = description;
+            dlg.ShowNewFolderButton = newFolderButton;
             if (start != null && Directory.Exists(start)) dlg.SelectedPath = start;
             return dlg.ShowDialog(owner) == DialogResult.OK ? dlg.SelectedPath : null;
         }
+    }
+
+    // 'Add Old Photos from a Folder...' (roadmap Step 26b): node copies the
+    // folder's photos into the backup, by month, leaving the folder as it is;
+    // the phone then offers them in 'Your Old Photos'.
+    void AddOldPhotos()
+    {
+        string picked = PickFolder(null,
+            "Choose a folder of old photos to add to your PicJot backup (a folder on this PC or an external drive). They're copied: the folder itself isn't changed.",
+            false);
+        if (picked == null) return;
+        Process p = node;
+        try
+        {
+            if (p == null || p.HasExited) throw new InvalidOperationException();
+            p.StandardInput.WriteLine("import " + picked);
+            p.StandardInput.Flush();
+        }
+        catch
+        {
+            icon.ShowBalloonTip(5000, "Not running", AppName + " isn't running right now. Try again in a moment.", ToolTipIcon.Warning);
+            return;
+        }
+        icon.ShowBalloonTip(5000, "Adding old photos",
+            "Copying the photos in " + picked + " into your backup. The " + AppName + " page shows how it goes.",
+            ToolTipIcon.Info);
+    }
+
+    // 'Copy Backup to a Drive...' (2026-10-23): a second copy of the backup on
+    // another drive, e.g. an external hard drive. Old photos are only in the
+    // backup once added; node copies what's new, verified, deleting nothing.
+    void CopyBackup()
+    {
+        Dictionary<string, object> s = FetchStatus();
+        Dictionary<string, object> last = s != null ? Dict(s, "backupCopy") : null;
+        string start = last != null ? Str(last, "to") : null;
+        string picked = PickFolder(start,
+            "Choose a folder on another drive (e.g. an external hard drive) for a copy of your PicJot backup. Each time, only what's new is copied; nothing is deleted from the copy.",
+            true);
+        if (picked == null) return;
+        Process p = node;
+        try
+        {
+            if (p == null || p.HasExited) throw new InvalidOperationException();
+            p.StandardInput.WriteLine("copy " + picked);
+            p.StandardInput.Flush();
+        }
+        catch
+        {
+            icon.ShowBalloonTip(5000, "Not running", AppName + " isn't running right now. Try again in a moment.", ToolTipIcon.Warning);
+            return;
+        }
+        icon.ShowBalloonTip(5000, "Copying your backup",
+            "Copying what's new to " + picked + ". The " + AppName + " page shows how it goes.",
+            ToolTipIcon.Info);
     }
 
     void ChangeFolder()
@@ -476,7 +570,12 @@ class Tray
     static bool IsStartWithWindows()
     {
         using (RegistryKey k = Registry.CurrentUser.OpenSubKey(RunKey))
-            return k != null && (k.GetValue(RunName) != null || k.GetValue(OldRunName) != null);
+        {
+            if (k == null) return false;
+            if (k.GetValue(RunName) != null) return true;
+            foreach (string old in OldRunNames) if (k.GetValue(old) != null) return true;
+            return false;
+        }
     }
 
     static void SetStartWithWindows(bool on)
@@ -485,7 +584,7 @@ class Tray
         {
             if (on) k.SetValue(RunName, "\"" + Application.ExecutablePath + "\"");
             else k.DeleteValue(RunName, false);
-            k.DeleteValue(OldRunName, false);
+            foreach (string old in OldRunNames) k.DeleteValue(old, false);
         }
     }
 
