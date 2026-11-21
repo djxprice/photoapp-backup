@@ -6,6 +6,8 @@
 
 This repository holds the **Android app download**, a **how-to guide**, and the **PC program**: PicJot for Windows, a one-file installer (see [section 3](#3-pc-backup-windows)). No PC? The app can also **back up to a USB stick** plugged into the phone ('Settings → Backup').
 
+> **PicJot's website is [picjot.app](https://picjot.app)**, with illustrated guides. PicJot comes to Google Play in 2027; until then, this page is where testers download it. [Privacy policy](https://nextdiversion.com/privacy). PicJot is made by [Next Diversion Software LLC](https://nextdiversion.com). No ads, no tracking, no subscription, no AI.
+
 ---
 
 ## 1. Install the app (Android)
