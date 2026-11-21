@@ -46,7 +46,7 @@ Then:
 | 🗑 **Trash** | *Marks* the photo for deletion. Marked photos are deleted **together at the end**, after Android asks you to confirm; if some aren't in your PC or USB stick backup yet, PicJot says so first (**Delete Anyway**, **Review Photos** to see them first, or **Keep Marked**). Tap the red **🗑 N** badge (top left) to delete them now, or **Review Photos** to see them (newest first) and untick any you want to keep; that's also how you take one back. |
 | **✓ Done** (top left) | Stop for now: shows what you've reviewed and what's left. **Done for Now** then closes the app. Anything you haven't reviewed comes back next time. |
 
-Everything saves as you go. At the end of a batch you can delete the marked photos, **Continue with Older Photos**, load the **Previous Day** or **Previous Week**, **Choose Photos** yourself, **Revisit Memories**, or tap **Done for Now** to close the app. With nothing left to review, PicJot opens on the same *All caught up* sheet.
+Everything saves as you go. At the end of a batch you can delete the marked photos, **Continue with Older Photos**, load the **Previous Day** or **Previous Week**, **Choose Photos** yourself, **Revisit Memories**, or tap **Done for Now** to close the app. With nothing left to review, PicJot opens on the same *All Caught Up* sheet.
 
 ### Elsewhere
 
