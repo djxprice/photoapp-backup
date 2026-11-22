@@ -46,7 +46,7 @@ const { isImage, isSidecarName, baseName, TAG_FOLDER, sidecarPathFor, besideSide
 const { readExifDate } = require('./lib/exif');
 const { oldPhotos, summary: oldSummary, pickBatch, kindOf, yearOf } = require('./lib/old');
 const { rawPreview } = require('./lib/rawpreview');
-const { timelineData, sendTimelinePhoto, timelinePage } = require('./timeline-page');
+const { timelineData, sendTimelinePhoto, timelinePage, timelineExport, exportCounts } = require('./timeline-page');
 const { cleanHideList } = require('./lib/timeline');
 const { createResponder } = require('./lib/mdns');
 const { tagsText } = require('./lib/words');
@@ -66,6 +66,33 @@ const RECENT_LINES = 50;
 const LOG_MAX_BYTES = 1024 * 1024;
 // The phone folders a backup covers (as the USB backup).
 const PHOTO_ROOTS = ['DCIM/', 'Pictures/', 'Download/'];
+
+// Where exported timelines go (2026-11-22, the user's call: PicJot saves
+// them, not the browser, which refuses folders like Downloads and has the
+// antivirus check every file it saves): Documents\PicJot Timelines, in the
+// Documents Windows itself uses (it may have been moved, e.g. into OneDrive).
+// { dir, label }: the folder, and how the page names it.
+function documentsFolder() {
+  if (process.platform === 'win32') {
+    try {
+      const out = require('child_process').execFileSync(
+        'reg',
+        ['query', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders', '/v', 'Personal'],
+        { encoding: 'utf8', windowsHide: true, timeout: 5000 }
+      );
+      const m = /Personal\s+REG_(?:EXPAND_)?SZ\s+(.+)/.exec(out);
+      if (m) {
+        const p = m[1].trim().replace(/%([^%]+)%/g, (all, name) => process.env[name] || all);
+        if (fs.existsSync(p)) return p;
+      }
+    } catch {
+      // the usual place
+    }
+  }
+  return path.join(os.homedir(), 'Documents');
+}
+const defaultExportsRoot = () => ({ dir: path.join(documentsFolder(), 'PicJot Timelines'), label: 'Documents\\PicJot Timelines' });
+const openInExplorer = (dir) => require('child_process').spawn('explorer.exe', [dir], { detached: true, stdio: 'ignore' }).unref();
 
 // ── Small helpers ─────────────────────────────────────────────────────────
 const b64url = (buf) => buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -209,6 +236,8 @@ function createReceiver({
   background = false,
   freeBytes = driveFree, // free space on the backup drive (tests pass their own)
   driveOf = (p) => path.parse(path.resolve(p)).root.toLowerCase(), // a copy must go to another drive (tests pass their own)
+  exportsRoot = defaultExportsRoot, // where exported timelines go: { dir, label } (tests pass their own)
+  openFolder = openInExplorer, // shows an exported timeline's folder (tests pass their own)
 }) {
   const configFile = path.join(configDir, 'receiver.json');
   let config = readJson(configFile, null);
@@ -1208,6 +1237,93 @@ ${phones.length ? `<p>Paired: ${phones.map(esc).join(', ')}</p>` : ''}
   // This PC's Do Not Show list for its timeline page (the phone has its own;
   // the user's call, 2026-10-23), kept in the settings. Only from the
   // timeline page: same origin, its token. Body { t, hide: [term] }.
+  // A request from the timeline page itself: this page's origin (or none:
+  // the browser leaves it out of some requests) and, checked by the caller,
+  // its token.
+  function fromThisPage(req) {
+    const p = pageServer.address().port;
+    const origin = req.headers.origin;
+    return !origin || origin === `http://127.0.0.1:${p}` || origin === `http://localhost:${p}`;
+  }
+
+  // ── Exporting the timeline (2026-11-22) ──
+  // The page asks for an export of what it shows; this makes its folder in
+  // Documents\PicJot Timelines ("<title> <date>", "(2)" when it exists) with
+  // the page (timelineExport), and saves each picture the browser makes
+  // (re-encoded on a canvas: a JPEG without EXIF, which is checked here too,
+  // so no location gets out) for the photos the export lists.
+  const exportsDone = new Map(); // id -> { dir, where, hashes, counts }
+  const EXPORT_PICTURE_MAX = 15 * 1024 * 1024;
+  const plural2 = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+  async function exportStart(req, res) {
+    const body = fromThisPage(req) ? await readJsonBody(req) : null;
+    if (!body || body.t !== formToken) throw fail(403, 'not from this page');
+    const problem = folderProblem();
+    if (problem) throw fail(503, problem);
+    const ex = timelineExport(destination(), {
+      includeNotable: body.notable === true,
+      group: String(body.group || 'month'),
+      search: String(body.q || '').slice(0, 200),
+      hide: config.timelineHide || [],
+      notes: body.notes === true,
+      highlights: body.highlights === true,
+      dateFrom: String(body.dateFrom || '').slice(0, 10),
+      dateTo: String(body.dateTo || '').slice(0, 10),
+      title: String(body.title || '').slice(0, 80),
+      now: now(),
+    });
+    const root = exportsRoot();
+    fs.mkdirSync(root.dir, { recursive: true });
+    let name = ex.folder;
+    for (let n = 2; fs.existsSync(path.join(root.dir, name)); n++) name = `${ex.folder} (${n})`;
+    const dir = path.join(root.dir, name);
+    for (const sub of ['photos', 'thumbs']) fs.mkdirSync(path.join(dir, sub), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'index.html'), ex.html);
+    const id = b64url(crypto.randomBytes(12));
+    const where = `${root.label}\\${name}`;
+    exportsDone.set(id, { dir, where, hashes: new Set(ex.photos.map((p) => p.hash)), counts: ex.counts });
+    while (exportsDone.size > 20) exportsDone.delete(exportsDone.keys().next().value);
+    say(`Exporting the timeline to ${where}: ${plural2(ex.counts.photos, 'photo')} and ${plural2(ex.counts.moments, 'Moment')}…`);
+    send(res, 200, { id, name, where, photos: ex.photos, counts: ex.counts });
+  }
+
+  // A picture the page made: ?id=&hash=&size=full|thumb, the JPEG as the body.
+  async function exportPhoto(req, res, url) {
+    if (!fromThisPage(req) || req.headers['x-picjot-token'] !== formToken) throw fail(403, 'not from this page');
+    const e = exportsDone.get(String(url.searchParams.get('id') || ''));
+    const hash = String(url.searchParams.get('hash') || '');
+    if (!e || !e.hashes.has(hash)) throw fail(404, 'not in this export');
+    const sub = { full: 'photos', thumb: 'thumbs' }[url.searchParams.get('size')];
+    if (!sub) throw fail(400, 'size: full or thumb');
+    const jpeg = await readBody(req, EXPORT_PICTURE_MAX);
+    if (jpeg.length < 4 || jpeg[0] !== 0xff || jpeg[1] !== 0xd8) throw fail(415, 'not a JPEG');
+    if (jpeg.includes(Buffer.from('Exif\0\0', 'latin1'))) throw fail(415, 'it has EXIF data');
+    const file = path.join(e.dir, sub, `${hash}.jpg`);
+    fs.writeFileSync(`${file}.part`, jpeg);
+    fs.renameSync(`${file}.part`, file);
+    send(res, 200, { ok: true });
+  }
+
+  async function exportDone(req, res) {
+    const body = fromThisPage(req) ? await readJsonBody(req) : null;
+    if (!body || body.t !== formToken) throw fail(403, 'not from this page');
+    const e = exportsDone.get(String(body.id || ''));
+    if (!e) throw fail(404, 'no such export');
+    const failed = Math.max(0, Math.floor(Number(body.failed) || 0));
+    say(`Exported the timeline to ${e.where}: ${plural2(e.counts.photos, 'photo')} and ${plural2(e.counts.moments, 'Moment')}${failed ? `; ${plural2(failed, 'picture')} couldn't be read` : ''}.`);
+    send(res, 200, { ok: true, where: e.where });
+  }
+
+  async function exportOpen(req, res) {
+    const body = fromThisPage(req) ? await readJsonBody(req) : null;
+    if (!body || body.t !== formToken) throw fail(403, 'not from this page');
+    const e = exportsDone.get(String(body.id || ''));
+    if (!e) throw fail(404, 'no such export');
+    openFolder(e.dir);
+    send(res, 200, { ok: true });
+  }
+
   async function setTimelineHide(req, res) {
     const p = pageServer.address().port;
     const origin = req.headers.origin;
@@ -1255,6 +1371,36 @@ ${phones.length ? `<p>Paired: ${phones.map(esc).join(', ')}</p>` : ''}
       } catch (e) {
         return send(res, 500, { error: e.message });
       }
+    }
+    // Export (2026-11-22): how much an export would hold, for the dialog
+    // (read-only, as /timeline/data); then the folder and its page, each
+    // picture the page makes, the end, and opening the folder (exporting,
+    // below).
+    if (req.method === 'GET' && url.pathname === '/timeline/export/count') {
+      const problem = folderProblem();
+      if (problem) return send(res, 503, { error: problem });
+      const q = url.searchParams;
+      return send(
+        res,
+        200,
+        exportCounts(destination(), {
+          includeNotable: q.get('notable') === '1',
+          group: q.get('group') || 'month',
+          search: (q.get('q') || '').slice(0, 200),
+          hide: config.timelineHide || [],
+          highlights: q.get('highlights') === '1',
+          dateFrom: (q.get('from') || '').slice(0, 10),
+          dateTo: (q.get('to') || '').slice(0, 10),
+        })
+      );
+    }
+    const exportRoutes = { '/timeline/export/start': exportStart, '/timeline/export/photo': exportPhoto, '/timeline/export/done': exportDone, '/timeline/export/open': exportOpen };
+    if (req.method === 'POST' && exportRoutes[url.pathname]) {
+      exportRoutes[url.pathname](req, res, url).catch((e) => {
+        if (!res.headersSent) send(res, e.status || 500, { error: e.message });
+        else res.destroy();
+      });
+      return undefined;
     }
     if (req.method === 'GET' && url.pathname === '/timeline/photo') {
       if (folderProblem()) {

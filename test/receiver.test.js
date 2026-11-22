@@ -24,7 +24,7 @@ function getPage(url, host) {
   const u = new URL(url);
   return new Promise((resolve, reject) => {
     http
-      .get({ host: u.hostname, port: u.port, path: u.pathname, headers: host ? { host } : {} }, (res) => {
+      .get({ host: u.hostname, port: u.port, path: u.pathname + u.search, headers: host ? { host } : {} }, (res) => {
         let text = '';
         res.on('data', (d) => (text += d));
         res.on('end', () => resolve({ status: res.statusCode, text }));
@@ -294,6 +294,91 @@ test("the timeline page's own Do Not Show list: kept in the settings, changed on
     assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(configDir, 'receiver.json'), 'utf8')).timelineHide, ['Work', 'private']);
     const data = JSON.parse((await getPage(`${pageUrl}timeline/data`)).text);
     assert.deepStrictEqual(data.hide.terms, ['Work', 'private']);
+  } finally {
+    await receiver.stop();
+  }
+});
+
+// Bytes POSTed to a local page (its query kept): { status, body }.
+function postBytes(url, buf, headers = {}) {
+  const u = new URL(url);
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      { host: u.hostname, port: u.port, path: u.pathname + u.search, method: 'POST', headers: { 'content-type': 'image/jpeg', 'content-length': buf.length, ...headers } },
+      (res) => {
+        const chunks = [];
+        res.on('data', (d) => chunks.push(d));
+        res.on('end', () => resolve({ status: res.statusCode, body: JSON.parse(Buffer.concat(chunks).toString('utf8') || 'null') }));
+      }
+    );
+    req.on('error', reject);
+    req.end(buf);
+  });
+}
+
+test('exporting the timeline: PicJot saves the folder in Documents › PicJot Timelines; only JPEGs without EXIF, only from the page', async () => {
+  const exportsDir = tmp();
+  const opened = [];
+  const { to, receiver, pageUrl } = await setup({
+    exportsRoot: () => ({ dir: exportsDir, label: 'Documents\\PicJot Timelines' }),
+    openFolder: (dir) => opened.push(dir),
+    now: () => new Date(2026, 10, 22, 15, 0),
+  });
+  try {
+    const h = 'a'.repeat(32);
+    const put = (rel, value) => {
+      const p = path.join(to, ...rel.split('/'));
+      fs.mkdirSync(path.dirname(p), { recursive: true });
+      fs.writeFileSync(p, typeof value === 'string' ? value : JSON.stringify(value));
+    };
+    put('.photoapp/index.json', { version: 1, photos: { [h]: { path: '2016/07/a.jpg', size: 1, tagged: true } } });
+    put('2016/07/a.jpg', 'picture');
+    put('PicJot Tags/2016/07/a.jpg.json', { version: 2, hashAlgorithm: 'md5', contentHash: h, significance: 'timeline', caption: 'Canoe', tags: [], note: '', creationTime: '2016-07-03T18:00:00.000Z' });
+    const page = (await getPage(`${pageUrl}timeline`)).text;
+    const token = JSON.parse(/const TOKEN = ("[^"]*");/.exec(page)[1]);
+    const port = new URL(pageUrl).port;
+    const start = (body, headers) => postJson(`${pageUrl}timeline/export/start`, body, headers);
+
+    assert.strictEqual((await start({ t: 'guess', title: 'Trip' })).status, 403, 'wrong token');
+    assert.strictEqual((await start({ t: token, title: 'Trip' }, { origin: 'https://evil.example' })).status, 403, 'another site');
+    const ex = await start({ t: token, title: 'Trip', group: 'month' }, { origin: `http://127.0.0.1:${port}` });
+    assert.strictEqual(ex.status, 200);
+    assert.strictEqual(ex.body.name, 'Trip 2026-11-22');
+    assert.strictEqual(ex.body.where, 'Documents\\PicJot Timelines\\Trip 2026-11-22');
+    assert.deepStrictEqual(ex.body.photos, [{ hash: h }]);
+    // What the dialog shows as the dates change (read-only, no token).
+    const count = async (q) => JSON.parse((await getPage(`${pageUrl}timeline/export/count?${q}`)).text);
+    assert.deepStrictEqual(await count('group=month&from=2017-01-01'), { photos: 0, moments: 0 });
+    assert.deepStrictEqual(await count('to=2016-12-31'), { photos: 1, moments: 0 });
+    const dated = await start({ t: token, title: 'Later', dateFrom: '2017-01-01' });
+    assert.deepStrictEqual(dated.body.photos, [], 'the dates limit the export too');
+    const dir = path.join(exportsDir, 'Trip 2026-11-22');
+    assert.match(fs.readFileSync(path.join(dir, 'index.html'), 'utf8'), /<title>Trip<\/title>/);
+
+    // The pictures the page made.
+    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16, 0x4a, 0x46, 0x49, 0x46, 0, 1, 0xff, 0xd9]);
+    const picture = (q, buf, headers = { 'x-picjot-token': token }) => postBytes(`${pageUrl}timeline/export/photo?${new URLSearchParams(q)}`, buf, headers);
+    assert.strictEqual((await picture({ id: ex.body.id, hash: h, size: 'full' }, jpeg, { 'x-picjot-token': 'guess' })).status, 403);
+    assert.strictEqual((await picture({ id: 'nope', hash: h, size: 'full' }, jpeg)).status, 404, 'no such export');
+    assert.strictEqual((await picture({ id: ex.body.id, hash: 'b'.repeat(32), size: 'full' }, jpeg)).status, 404, 'not in it');
+    assert.strictEqual((await picture({ id: ex.body.id, hash: h, size: 'huge' }, jpeg)).status, 400);
+    assert.strictEqual((await picture({ id: ex.body.id, hash: h, size: 'full' }, Buffer.from('<html>'))).status, 415, 'not a JPEG');
+    const withExif = Buffer.concat([jpeg.subarray(0, 2), Buffer.from([0xff, 0xe1, 0, 8]), Buffer.from('Exif\0\0', 'latin1'), jpeg.subarray(2)]);
+    assert.strictEqual((await picture({ id: ex.body.id, hash: h, size: 'full' }, withExif)).status, 415, 'EXIF (location) never gets in');
+    assert.strictEqual((await picture({ id: ex.body.id, hash: h, size: 'full' }, jpeg)).status, 200);
+    assert.strictEqual((await picture({ id: ex.body.id, hash: h, size: 'thumb' }, jpeg)).status, 200);
+    assert.ok(fs.readFileSync(path.join(dir, 'photos', `${h}.jpg`)).equals(jpeg));
+    assert.ok(fs.existsSync(path.join(dir, 'thumbs', `${h}.jpg`)));
+
+    assert.strictEqual((await postJson(`${pageUrl}timeline/export/done`, { t: token, id: ex.body.id, failed: 0 })).status, 200);
+    assert.strictEqual((await postJson(`${pageUrl}timeline/export/open`, { t: 'guess', id: ex.body.id })).status, 403);
+    assert.strictEqual((await postJson(`${pageUrl}timeline/export/open`, { t: token, id: ex.body.id })).status, 200);
+    assert.deepStrictEqual(opened, [dir]);
+
+    // The same title again: a second folder, nothing overwritten.
+    const again = await start({ t: token, title: 'Trip' });
+    assert.strictEqual(again.body.name, 'Trip 2026-11-22 (2)');
+    assert.ok(fs.existsSync(path.join(dir, 'photos', `${h}.jpg`)));
   } finally {
     await receiver.stop();
   }
