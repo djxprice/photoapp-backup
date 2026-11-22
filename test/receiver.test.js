@@ -148,6 +148,29 @@ test('pairing: one-time code, then a token; the QR text carries the pin', async 
   }
 });
 
+test("without a network: the pairing page says so instead of a code with no address, and the status page isn't Ready", async () => {
+  let addrs = [];
+  const { receiver, pageUrl } = await setup({ addresses: () => addrs });
+  try {
+    const off = await getPage(`${pageUrl}pair`);
+    assert.doesNotMatch(off.text, /<svg/);
+    assert.match(off.text, /This PC isn't connected to a network/);
+    assert.match(off.text, /content="5"/);
+    const status = await getPage(pageUrl);
+    assert.match(status.text, /isn't connected to a network, so phones can't reach it/);
+    assert.doesNotMatch(status.text, /● Ready/);
+
+    // Back on the network: the code, and Ready.
+    addrs = ['192.168.1.9'];
+    const on = await getPage(`${pageUrl}pair`);
+    assert.match(on.text, /<svg/);
+    assert.match(on.text, /content="60"/);
+    assert.match((await getPage(pageUrl)).text, /● Ready/);
+  } finally {
+    await receiver.stop();
+  }
+});
+
 // A form POST to the local pages: { status, location }.
 function postForm(url, fields, headers = {}) {
   const u = new URL(url);

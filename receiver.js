@@ -1098,9 +1098,11 @@ form.inline{display:inline;margin-left:8px}form.inline button{background:none;bo
       ? `<p class="state busy">● Copying the backup to ${esc(s.copying.to)}: ${s.copying.done} of ${s.copying.total} files…</p>`
       : s.busy
       ? `<p class="state busy">● Backing up from ${esc(s.phone || 'a phone')}…</p>`
-      : s.problem
-        ? `<p class="state warn">● ${esc(s.problem)}</p>`
-        : '<p class="state ok">● Ready: phones can back up whenever this PC is on.</p>';
+      : !s.addresses.length
+        ? `<p class="state warn">● This PC isn't connected to a network, so phones can't reach it. Connect it to your Wi-Fi (or a network cable).</p>`
+        : s.problem
+          ? `<p class="state warn">● ${esc(s.problem)}</p>`
+          : '<p class="state ok">● Ready: phones can back up whenever this PC is on.</p>';
     const last = s.lastBackup
       ? `${esc(when(s.lastBackup.at))} from ${esc(s.lastBackup.phone)}: ${esc(s.lastBackup.text)}`
       : 'None yet.';
@@ -1142,20 +1144,30 @@ ${log}
 </body></html>`;
   }
 
+  // Without a network address (the PC's Wi-Fi dropped, 2026-11-22) a code
+  // would tell the phone nowhere to find the PC, and the phone refuses it:
+  // the page says why instead, and looks again every few seconds.
   function pairingPage() {
-    const qr = qrcode(0, 'M');
-    qr.addData(pairingPayload());
-    qr.make();
     const phones = Object.values(config.phones).map((p) => p.name);
     const addrs = addresses();
-    return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="60">
+    let code;
+    if (addrs.length) {
+      const qr = qrcode(0, 'M');
+      qr.addData(pairingPayload());
+      qr.make();
+      code = `<p>In PicJot on the phone: <b>'Settings → Backup → Back Up over Wi-Fi → Pair with PC'</b>, then scan this code.</p>
+<div class="qr">${qr.createSvgTag({ cellSize: 6, margin: 2 })}</div>`;
+    } else {
+      code = `<p class="state warn">● This PC isn't connected to a network.</p>
+<p>A phone finds the PC through your home network. Connect this PC to your Wi-Fi (or a network cable): the code appears here as soon as it's connected.</p>`;
+    }
+    return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="${addrs.length ? 60 : 5}">
 <title>Pair a Phone · ${APP_NAME}</title><style>${STYLE}</style></head><body>
 <p><a href="/">← ${APP_NAME}</a></p>
 <h1>Pair a Phone with PicJot</h1>
-<p>In PicJot on the phone: <b>'Settings → Backup → Back Up over Wi-Fi → Pair with PC'</b>, then scan this code.</p>
-<div class="qr">${qr.createSvgTag({ cellSize: 6, margin: 2 })}</div>
+${code}
 <p class="muted">This PC: ${esc(pcName)} (${esc(addrs.join(', ') || 'no network found')}), port ${listeningPort()}.<br>
-Backups go to ${esc(destination() || 'a folder not chosen yet')}.<br>The code works once and expires after 10 minutes; this page refreshes itself.</p>
+Backups go to ${esc(destination() || 'a folder not chosen yet')}.<br>${addrs.length ? 'The code works once and expires after 10 minutes; this page refreshes itself.' : 'This page checks again every few seconds.'}</p>
 ${phones.length ? `<p>Paired: ${phones.map(esc).join(', ')}</p>` : ''}
 </body></html>`;
   }
