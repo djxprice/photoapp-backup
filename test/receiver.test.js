@@ -513,6 +513,9 @@ test('old photos (Step 26b): which ones, in batches, the picture, reviewed', asy
     const early = await api('GET', '/v1/old', { token });
     assert.strictEqual(early.status, 409);
     assert.match(early.body.error, /Back up over Wi-Fi once first/);
+    // A picture, though, goes to any paired phone (a new phone's restored
+    // notes show theirs on its timeline before its first backup).
+    assert.strictEqual((await api('GET', `/v1/old/file?hash=${md5(a)}`, { token, raw: true })).status, 200);
 
     const inv = await api('POST', '/v1/inventory', { token, json: { files: [{ rel: 'DCIM/Camera/b.jpg', size: b.length }] } });
     assert.strictEqual(inv.status, 200);
@@ -574,6 +577,46 @@ test('old photos (Step 26b): which ones, in batches, the picture, reviewed', asy
 
     // Unpaired phones get nothing.
     assert.strictEqual((await api('GET', '/v1/old')).status, 401);
+  } finally {
+    await receiver.stop();
+  }
+});
+
+test("notes for restoring on a new phone: every photo's and Moment's (waiting ones too), newest copy, none cleared; no backup needed first", async () => {
+  const { to, receiver, api } = await setup();
+  try {
+    const token = await pairPhone(api, receiver);
+    const put = (rel, value) => {
+      const p = path.join(to, ...rel.split('/'));
+      fs.mkdirSync(path.dirname(p), { recursive: true });
+      fs.writeFileSync(p, typeof value === 'string' ? value : JSON.stringify(value));
+    };
+    const h = (c) => c.repeat(32);
+    put('PicJot Tags/2026/07/a.jpg.json', { version: 2, hashAlgorithm: 'md5', contentHash: h('a'), caption: 'Lake', photoFile: 'a.jpg', updatedAt: '2026-07-02T00:00:00Z' });
+    // A RAW+JPEG pair's older copy of the same photo's notes: the newer one wins.
+    put('PicJot Tags/2026/07/a.dng.json', { version: 2, hashAlgorithm: 'md5', contentHash: h('a'), caption: 'Old', updatedAt: '2026-07-01T00:00:00Z' });
+    put('PicJot Tags/2015/08/Moment - Moved (bbbbbb).json', { version: 2, kind: 'moment', id: h('b'), title: 'Moved', date: '2015-08-01' });
+    put('PicJot Tags/2015/09/Moment - Gone (cccccc).json', { version: 2, kind: 'moment', id: h('c'), cleared: true });
+    put('PicJot Tags/2011/03/takeout.json', { title: 'e.jpg', photoTakenTime: { timestamp: '1300000000' } });
+    put('PicJot Tags/2011/03/broken.json', '{ "contentHash": ');
+    // Filed beside its photo before 2026-10-22, with no backup since.
+    put('2012/05/d.jpg.json', { hashAlgorithm: 'md5', contentHash: h('d'), note: 'beside' });
+    put('.photoapp/index.json', { version: 1, photos: { [h('d')]: { path: '2012/05/d.jpg', size: 5 } } });
+    // Waiting for its photo, which never reached the backup.
+    put(`.photoapp/orphan-sidecars/${h('e')}.json`, { hashAlgorithm: 'md5', contentHash: h('e'), caption: 'waiting' });
+
+    const r = await api('GET', '/v1/notes', { token });
+    assert.strictEqual(r.status, 200);
+    assert.strictEqual(r.body.pcName, 'TEST-PC');
+    assert.strictEqual(r.body.photos, 3);
+    assert.strictEqual(r.body.moments, 1);
+    const by = Object.fromEntries(r.body.records.map((x) => [x.contentHash || x.id, x]));
+    assert.deepStrictEqual(Object.keys(by).sort(), [h('a'), h('b'), h('d'), h('e')]);
+    assert.strictEqual(by[h('a')].caption, 'Lake');
+    assert.strictEqual(by[h('d')].note, 'beside');
+
+    // Unpaired phones get nothing.
+    assert.strictEqual((await api('GET', '/v1/notes')).status, 401);
   } finally {
     await receiver.stop();
   }

@@ -1,6 +1,6 @@
 # PicJot metadata file (sidecar) — schema v2
 
-The **canonical definition** of PicJot's per-photo metadata file. Code that writes it: `buildSidecar` in `src/lib/sidecar.js` (keep the two in step). Readers: the PC backup tool (`pc/backup.js`), the app's backup to a USB stick (`src/services/stickBackup.js`), the PC's timeline page (`pc/timeline-page.js`, since 2026-10-22), and the future PC↔phone metadata sync. **Moments** (timeline entries without a photo) are a second kind of record in the same folders: see [Moments](#moments) below.
+The **canonical definition** of PicJot's per-photo metadata file. Code that writes it: `buildSidecar` in `src/lib/sidecar.js` (keep the two in step). Readers: the PC backup tool (`pc/backup.js`), the app's backup to a USB stick (`src/services/stickBackup.js`), the PC's timeline page (`pc/timeline-page.js`, since 2026-10-22), **the app's restore** (`src/lib/restore.js`: since 2026-11-21 from the tag folder after a reinstall; since 2026-11-22 on a new phone from a backup, the PC's over Wi-Fi (`GET /v1/notes`) or a USB stick's, whose files it recognises by their contents, not their names; finds each photo on the phone by `fileName` + `fileSize`, confirms it by `contentHash`; a photo not on the phone comes back as a `pc:<hash>` entry; Moments too), and the future PC↔phone metadata sync. **Moments** (timeline entries without a photo) are a second kind of record in the same folders: see [Moments](#moments) below.
 
 ## Where the files live
 

@@ -42,7 +42,7 @@ const { pipeline } = require('stream/promises');
 const { runBackup, importEstimate } = require('./backup');
 const { createCertificate } = require('./lib/cert');
 const { readJson, writeJson, readHead, walk, placeVerified, freeBytes: driveFree, sizeText } = require('./lib/files');
-const { isImage, isSidecarName, baseName, sidecarPathFor, besideSidecarPathFor, legacySidecarPathFor, parseLeadingJson } = require('./lib/plan');
+const { isImage, isSidecarName, baseName, TAG_FOLDER, sidecarPathFor, besideSidecarPathFor, legacySidecarPathFor, parseLeadingJson } = require('./lib/plan');
 const { readExifDate } = require('./lib/exif');
 const { oldPhotos, summary: oldSummary, pickBatch, kindOf, yearOf } = require('./lib/old');
 const { rawPreview } = require('./lib/rawpreview');
@@ -684,8 +684,11 @@ function createReceiver({
   const CONTENT_TYPES = { jpeg: 'image/jpeg', heic: 'image/heic', png: 'image/png', webp: 'image/webp', raw: 'image/jpeg' };
 
   // One old photo's picture: the file itself, or for RAW the JPEG inside.
+  // Any photo in the backup, to any paired phone, with or without a backup
+  // from it: a new phone's restored notes show theirs on its timeline (as
+  // 'On your PC') before its first backup.
   async function oldFile(phoneId, res, url) {
-    const f = oldFolder(phoneId);
+    const f = folder();
     const hash = String(url.searchParams.get('hash') || '');
     const e = /^[0-9a-f]{32}$/.test(hash) && readJson(f.indexFile, { photos: {} }).photos[hash];
     if (!e) throw fail(404, 'not in the backup');
@@ -723,6 +726,52 @@ function createReceiver({
       if (oldCache) oldCache.list = oldCache.list.filter((p) => !state.done[p.hash]);
     }
     return { ok: true, added, remaining: oldList(f).length };
+  }
+
+  // ── Notes for a new phone (2026-11-22, the user's go-ahead) ──
+  // Every note in the backup, for the app's 'Restore Notes' on a new phone or
+  // after a reinstall: the tag files in PicJot Tags (photos and Moments), any
+  // still beside their photo (filed before 2026-10-22, no backup since), and
+  // those waiting for their photo (.photoapp/orphan-sidecars: the photo never
+  // reached the backup, but the notes are the user's).
+  // The records go as they are; the phone finds their photos (lib/restore.js).
+  // Cleared records aren't kept on the PC, so none are sent. Unlike the old
+  // photos, this needs no backup from the phone first: a new phone has none.
+  function notes() {
+    const f = folder();
+    const byHash = new Map();
+    const moments = new Map();
+    const take = (rel) => {
+      let r = null;
+      try {
+        r = parseLeadingJson(fs.readFileSync(path.join(f.to, fromPosix(rel)), 'utf8'));
+      } catch {
+        return;
+      }
+      const rec = r && r.value;
+      if (!rec || typeof rec !== 'object' || Array.isArray(rec) || rec.cleared) return;
+      const newer = (a, b) => !b || String(a.updatedAt || '') > String(b.updatedAt || '');
+      if (rec.kind === 'moment') {
+        if (/^[0-9a-f]{32}$/.test(String(rec.id || '')) && newer(rec, moments.get(rec.id))) moments.set(rec.id, rec);
+      } else if (!rec.kind && rec.hashAlgorithm === 'md5' && /^[0-9a-f]{32}$/.test(String(rec.contentHash || ''))) {
+        if (newer(rec, byHash.get(rec.contentHash))) byHash.set(rec.contentHash, rec);
+      }
+    };
+    for (const rel of walk(path.join(f.to, TAG_FOLDER))) {
+      if (/\.json$/i.test(rel)) take(`${TAG_FOLDER}/${rel}`);
+    }
+    const index = readJson(f.indexFile, { photos: {} });
+    for (const [hash, e] of Object.entries(index.photos || {})) {
+      if (byHash.has(hash) || !e || !e.path) continue;
+      for (const rel of [besideSidecarPathFor(e.path), legacySidecarPathFor(e.path)]) {
+        if (fs.existsSync(path.join(f.to, fromPosix(rel)))) take(rel);
+      }
+    }
+    for (const name of walk(path.join(f.meta, 'orphan-sidecars'))) {
+      if (/^[0-9a-f]{32}\.json$/.test(name)) take(`.photoapp/orphan-sidecars/${name}`);
+    }
+    const records = [...byHash.values(), ...moments.values()];
+    return { pcName, photos: byHash.size, moments: moments.size, records };
   }
 
   // ── Adding a folder of old photos (Step 26b) ──
@@ -977,6 +1026,11 @@ function createReceiver({
       if (route === 'POST /v1/old/batch') return send(res, 200, oldBatch(phoneId, await readJsonBody(req)));
       if (route === 'GET /v1/old/file') return await oldFile(phoneId, res, url);
       if (route === 'POST /v1/old/done') return send(res, 200, oldDone(phoneId, await readJsonBody(req)));
+      if (route === 'GET /v1/notes') {
+        const r = notes();
+        say(`Sent the notes of ${plural(r.photos, 'photo')}${r.moments ? ` and ${plural(r.moments, 'Moment')}` : ''} to ${config.phones[phoneId].name}, for restoring.`);
+        return send(res, 200, r);
+      }
       throw fail(404, 'not found');
     } catch (e) {
       if (!e.status || e.status === 503) say(e.status ? e.message : `Receiver error: ${e.message}`);
