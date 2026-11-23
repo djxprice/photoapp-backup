@@ -421,7 +421,7 @@ function createReceiver({
   // While old photos are being added, a phone can't back up (both write the
   // backup's index): it's told so plainly.
   const busyAddingOld = () =>
-    fail(409, 'Your PC is adding old photos to the backup right now. Back up again when it has finished (a few minutes).');
+    fail(409, 'Your PC is adding photos from a folder to the backup right now. Back up again when it has finished (a few minutes).');
 
   function inventory(phoneId, body) {
     const f = folder();
@@ -588,7 +588,7 @@ function createReceiver({
 
   // ── Old photos (roadmap Step 26b) ──
   // Photos in the backup the phone can't review in its daily review (not on
-  // it): sent in batches for its "Your Old Photos" review (lib/old.js). Their
+  // it): sent in batches for its "Photos From Your PC" review (lib/old.js). Their
   // tags come back as tag files with the next backup, filed in the tag folder
   // like any photo's; skipped and reviewed ones are kept in old-photos.json so they
   // aren't offered again.
@@ -804,7 +804,7 @@ function createReceiver({
   }
 
   // ── Adding a folder of old photos (Step 26b) ──
-  // The tray's 'Add Old Photos from a Folder…' (a line "import <folder>" on
+  // The tray's 'Add Photos from a Folder…' ('Add Old Photos…' until 2026-11-23) (a line "import <folder>" on
   // stdin). Copies, never moves, its photos into the backup, filed by month
   // and deduplicated (pc/backup.js --from); they're then old photos for the
   // phone to review.
@@ -820,7 +820,7 @@ function createReceiver({
     try {
       return await addFolder(dir);
     } catch (e) {
-      say(`Couldn't add old photos: ${e.message}`);
+      say(`Couldn't add the photos: ${e.message}`);
       throw e;
     }
   }
@@ -844,7 +844,7 @@ function createReceiver({
     }
     finishing = true;
     importing = { from: src, startedAt: now().toISOString(), done: 0, total: est.photos };
-    say(`Adding old photos from ${src}: ${plural(est.photos, 'photo')} (about ${sizeText(est.bytes)} new)…`);
+    say(`Adding photos from ${src}: ${plural(est.photos, 'photo')} (about ${sizeText(est.bytes)} new)…`);
     try {
       const result = await runBackup({
         to: f.to,
@@ -866,7 +866,7 @@ function createReceiver({
       };
       saveConfig();
       oldCache = null;
-      say(`Added old photos from ${src}: ${importText(config.lastImport)}`);
+      say(`Added photos from ${src}: ${importText(config.lastImport)}`);
       return config.lastImport;
     } finally {
       finishing = false;
@@ -1014,10 +1014,10 @@ function createReceiver({
     const imported = config.lastImport && config.lastImport.copied > 0 ? config.lastImport.at : null;
     if (!c) {
       return imported
-        ? "Old photos you've added are only in this backup. Keep a copy on another drive: right-click the icon → 'Copy Backup to a Drive'."
+        ? "Photos you've added from folders are only in this backup. Keep a copy on another drive: right-click the icon → 'Copy Backup to a Drive'."
         : null;
     }
-    if (imported && imported > c.at) return "Old photos were added since the backup was last copied: copy it again ('Copy Backup to a Drive').";
+    if (imported && imported > c.at) return "Photos from a folder were added since the backup was last copied: copy it again ('Copy Backup to a Drive').";
     if (now().getTime() - Date.parse(c.at) > 30 * 24 * 60 * 60 * 1000) return "The backup's copy is over a month old: copy it again ('Copy Backup to a Drive').";
     return null;
   }
@@ -1120,7 +1120,7 @@ form.inline{display:inline;margin-left:8px}form.inline button{background:none;bo
   function statusPage() {
     const s = status();
     const state = s.importing
-      ? `<p class="state busy">● Adding old photos from ${esc(s.importing.from)}: ${s.importing.done || 0} of ${
+      ? `<p class="state busy">● Adding photos from ${esc(s.importing.from)}: ${s.importing.done || 0} of ${
           s.importing.total || '…'
         }…</p>`
       : s.copying
@@ -1149,7 +1149,7 @@ form.inline{display:inline;margin-left:8px}form.inline button{background:none;bo
       ? `<ul class="log">${s.recent.map((r) => `<li><span>${esc(when(r.at))}</span>${esc(r.text)}</li>`).join('')}</ul>`
       : '<p class="muted">Nothing yet.</p>';
     const footer = background
-      ? `${APP_NAME} runs in the background. Right-click its icon by the clock for 'Open Timeline', 'Pair a Phone', 'Add Old Photos from a Folder', 'Copy Backup to a Drive', 'Change Backup Folder', 'Start with Windows' or 'Quit'. Its log: %APPDATA%\\PhotoApp\\receiver.log.`
+      ? `${APP_NAME} runs in the background. Right-click its icon by the clock for 'Open Timeline', 'Pair a Phone', 'Add Photos from a Folder', 'Copy Backup to a Drive', 'Change Backup Folder', 'Start with Windows' or 'Quit'. Its log: %APPDATA%\\PhotoApp\\receiver.log.`
       : 'Running in a window: close the window to stop the receiver.';
     return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="10">
 <title>${APP_NAME}</title><style>${STYLE}</style></head><body>
@@ -1160,7 +1160,7 @@ ${state}
 <dt>Backup Folder</dt><dd>${esc(s.folder || 'not chosen yet')}</dd>
 <dt>Last Backup</dt><dd>${last}</dd>
 <dt>Timeline</dt><dd><a href="/timeline">Open your timeline</a></dd>
-${s.lastImport ? `<dt>Old Photos Added</dt><dd>${esc(when(s.lastImport.at))} from ${esc(s.lastImport.from)}: ${esc(s.lastImport.text)}</dd>` : ''}
+${s.lastImport ? `<dt>Photos Added</dt><dd>${esc(when(s.lastImport.at))} from ${esc(s.lastImport.from)}: ${esc(s.lastImport.text)}</dd>` : ''}
 <dt>Copy of the Backup</dt><dd>${s.backupCopy ? `${esc(s.backupCopy.to)} · ${esc(when(s.backupCopy.at))}: ${esc(s.backupCopy.text)}` : 'None yet'}</dd>
 </dl>
 ${s.copyAdvice ? `<p class="warn">${esc(s.copyAdvice)}</p>` : ''}

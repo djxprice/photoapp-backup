@@ -744,7 +744,7 @@ test("adding a folder of old photos: copied in, then offered as old photos", asy
     await assert.rejects(receiver.importFolder(path.dirname(to)), /other than the backup folder/);
     await assert.rejects(receiver.importFolder(path.join(src, 'nope')), /isn't a folder/);
     // Why it didn't happen shows on the page, not only in the log.
-    assert.match((await getPage(pageUrl)).text, /Couldn(&#39;|')t add old photos: Choose a folder other than the backup folder/);
+    assert.match((await getPage(pageUrl)).text, /Couldn(&#39;|')t add the photos: Choose a folder other than the backup folder/);
 
     const r = await receiver.importFolder(src);
     assert.strictEqual(r.copied, 1);
@@ -754,7 +754,7 @@ test("adding a folder of old photos: copied in, then offered as old photos", asy
     assert.strictEqual(importText({ copied: 2, present: 3, failed: 1 }), "2 photos added, 3 already in the backup. 1 photo couldn't be copied (see 'Recent Activity').");
     assert.strictEqual(importText({ copied: 5, notCopied: 7 }), '5 photos added. 7 photos not added: the backup drive is nearly full.');
     const page = await getPage(pageUrl);
-    assert.match(page.text, /Old Photos Added/);
+    assert.match(page.text, /Photos Added/);
 
     // Again: nothing new.
     assert.strictEqual((await receiver.importFolder(src)).present, 1);

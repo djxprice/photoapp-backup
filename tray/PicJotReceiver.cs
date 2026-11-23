@@ -214,7 +214,7 @@ class Tray
         menu.Items.Add(open);
         menu.Items.Add(new ToolStripMenuItem("Open Timeline", null, delegate { OpenUrl(TimelineUrl); }));
         menu.Items.Add(new ToolStripMenuItem("Pair a Phone", null, delegate { OpenUrl(PairUrl); }));
-        menu.Items.Add(new ToolStripMenuItem("Add Old Photos from a Folder...", null, delegate { AddOldPhotos(); }));
+        menu.Items.Add(new ToolStripMenuItem("Add Photos from a Folder...", null, delegate { AddOldPhotos(); }));
         menu.Items.Add(new ToolStripMenuItem("Copy Backup to a Drive...", null, delegate { CopyBackup(); }));
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(new ToolStripMenuItem("Change Backup Folder...", null, delegate { ChangeFolder(); }));
@@ -348,7 +348,7 @@ class Tray
         Dictionary<string, object> backupCopy = Dict(s, "backupCopy");
         string importAt = lastImport != null ? Str(lastImport, "at") : null;
         string copyAt = backupCopy != null ? Str(backupCopy, "at") : null;
-        if (Dict(s, "importing") != null) SetText(AppName + ": adding old photos");
+        if (Dict(s, "importing") != null) SetText(AppName + ": adding photos");
         else if (Dict(s, "copying") != null) SetText(AppName + ": copying the backup");
         else if (busy)
         {
@@ -384,7 +384,7 @@ class Tray
             // Old photos added: and, if they're only in this backup, the copy.
             seenImportAt = importAt;
             string advice = Str(s, "copyAdvice");
-            icon.ShowBalloonTip(10000, "Old photos added", (Str(lastImport, "text") ?? "") + (advice != null ? " " + advice : ""), ToolTipIcon.Info);
+            icon.ShowBalloonTip(10000, "Photos added", (Str(lastImport, "text") ?? "") + (advice != null ? " " + advice : ""), ToolTipIcon.Info);
         }
         if (copyAt != null && copyAt != seenCopyAt)
         {
@@ -503,13 +503,13 @@ class Tray
         }
     }
 
-    // 'Add Old Photos from a Folder...' (roadmap Step 26b): node copies the
+    // 'Add Photos from a Folder...' (roadmap Step 26b; 'Add Old Photos…' until 2026-11-23): node copies the
     // folder's photos into the backup, by month, leaving the folder as it is;
-    // the phone then offers them in 'Your Old Photos'.
+    // the phone then offers them in 'Photos From Your PC'.
     void AddOldPhotos()
     {
         string picked = PickFolder(null,
-            "Choose a folder of old photos to add to your PicJot backup (a folder on this PC or an external drive). They're copied: the folder itself isn't changed.",
+            "Choose a folder of photos to add to your PicJot backup (a folder on this PC or an external drive). They're copied: the folder itself isn't changed.",
             false);
         if (picked == null) return;
         Process p = node;
@@ -524,7 +524,7 @@ class Tray
             icon.ShowBalloonTip(5000, "Not running", AppName + " isn't running right now. Try again in a moment.", ToolTipIcon.Warning);
             return;
         }
-        icon.ShowBalloonTip(5000, "Adding old photos",
+        icon.ShowBalloonTip(5000, "Adding photos",
             "Copying the photos in " + picked + " into your backup. The " + AppName + " page shows how it goes.",
             ToolTipIcon.Info);
     }
