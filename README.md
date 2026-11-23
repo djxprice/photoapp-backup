@@ -29,7 +29,7 @@ This repository holds the **Android app download**, a **how-to guide**, and the 
 
 PicJot shows your **newest untagged photos**, 20 at a time (change this in Settings). For each photo:
 
-- **Same as Previous**, for a series of similar photos, comes twice: under the caption it copies the previous photo's caption, and first among the tag suggestions it adds the previous photo's tags (keeping any already there). The note and the mark aren't copied. On the first photo of a new batch, they use the last ones you entered.
+- **Same as Previous**, for a series of similar photos, comes twice: under the caption it copies the previous photo's caption, and at the right end of the tag suggestions, near your thumb, it adds the previous photo's tags (keeping any already there). The note and the mark aren't copied. On the first photo of a new batch, they use the last ones you entered.
 - **Caption:** type what the moment was ("What's this moment?").
 - **Tags:** type a tag and press Enter or comma to add it; tap a suggestion to reuse one of your common tags; tap a tag to remove it. **Long-press a suggestion to hide it** from the list (photos keep the tag; 'Settings → Hidden Tag Suggestions' brings it back).
 - **Notable** or **Timeline:** tap one to mark the photo, tap it again to clear it. **Notable** is for photos worth noting: more than most, but not a timeline moment; **Timeline** for the big moments (they'll make up your timeline, and count as Notable everywhere). A photo with neither simply isn't marked. Marking a photo opens the note. (Notable was called Important until October 2026.)
