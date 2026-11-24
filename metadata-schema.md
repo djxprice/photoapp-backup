@@ -15,7 +15,7 @@ A photo has a metadata file when the user expressed something about it (`needsSi
 - it has a **caption, tags or a note**, or
 - it is marked **Notable** (called Important until 2026-10-20) or **Timeline** (even with no text). (Until 2026-10-19 also **Utility**.)
 
-Photos that were only skipped, only marked Keep on Phone, or not marked at all, have no file. Deleting the photo from the device via the end-of-queue batch delete deletes its file. Free Up Space keeps the file (the photo is in a backup).
+Photos that were only skipped, only marked Keep on Phone, or not marked at all, have no file. **Skips** go in one file instead, `skipped.json` in the tag folder (since 2026-11-23, `src/lib/skipList.js`): `{ "type": "photoapp-skipped", "version": 1, "updatedAt", "photos": [{ "contentHash", "hashSource", "fileName", "fileSize", "creationTime", "skippedAt" }] }`, every skipped photo the app has a hash for (freed ones too), sorted by hash, rewritten a moment after a skip or unskip. The backups carry it (the PC keeps one per phone in `.photoapp/skipped/<phoneId>.json`, the USB stick in its `PicJot Tags`); Restore Notes reads it as one skip-only record per photo; the PC leaves its photos out of Photos From Your PC. (For a few hours on 2026-11-23 each skip had its own tag file; the app folds those into the list.) Deleting the photo from the device via the end-of-queue batch delete deletes its file. Free Up Space keeps the file (the photo is in a backup).
 
 **Clearing everything from a photo** replaces its file with a **cleared record** (since 2026-10-15), so the PC's *Sync tags* removes its copy of the tags too:
 

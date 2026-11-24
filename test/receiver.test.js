@@ -451,11 +451,24 @@ test('a backup over Wi-Fi: list, send, finish; files filed, tags in the tag fold
       caption: 'Lunch',
       creationTime: Date.parse('2026-07-20T15:46:54Z'),
     };
+    // The phone's skipped list (2026-11-23) goes with the tag files.
+    const skipList = { type: 'photoapp-skipped', version: 1, photos: [{ contentHash: md5(photo2), skippedAt: '2026-11-23T10:00:00.000Z' }] };
     const fin = await api('POST', '/v1/finish', {
       token,
-      json: { tagFolder: 'DCIM/photoAppMetadada', tagFiles: [{ name: `${md5(photo1)}.json`, text: JSON.stringify(tagRecord) }] },
+      json: {
+        tagFolder: 'DCIM/photoAppMetadada',
+        tagFiles: [
+          { name: `${md5(photo1)}.json`, text: JSON.stringify(tagRecord) },
+          { name: 'skipped.json', text: JSON.stringify(skipList) },
+        ],
+      },
     });
     assert.strictEqual(fin.status, 200, JSON.stringify(fin.body));
+    const skipDir = path.join(to, '.photoapp', 'skipped');
+    const keptLists = fs.readdirSync(skipDir);
+    assert.strictEqual(keptLists.length, 1, "the phone's skipped list, kept apart from the tag files");
+    assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(skipDir, keptLists[0]), 'utf8')).photos, skipList.photos);
+    assert.ok(!fs.existsSync(path.join(to, 'PicJot Tags', 'skipped.json')));
     assert.strictEqual(fin.body.summary.copied, 2);
     assert.deepStrictEqual(fin.body.errors, []);
     assert.ok(fs.existsSync(path.join(to, '2026', '07', '20260720_154654.jpg')));
@@ -602,6 +615,9 @@ test('old photos (Step 26b): which ones, in batches, the picture, reviewed', asy
     const e = put('2011/03/e.jpg', Buffer.from('from a Google Takeout'));
     put('2011/03/e.jpg.json', JSON.stringify({ title: 'e.jpg', photoTakenTime: { timestamp: '1300000000' } }));
     const f = put('2010/06/f.heic', Buffer.from('heic bytes'));
+    // Skipped on a phone (its skipped list), then freed from it: not offered.
+    const g = put('2016/04/g.jpg', Buffer.from('skipped on a phone'));
+    put('.photoapp/skipped/a-phone.json', JSON.stringify({ type: 'photoapp-skipped', version: 1, photos: [{ contentHash: md5(g) }] }));
     const index = { version: 1, photos: {} };
     for (const [rel, buf, from, description] of [
       ['2009/07/a.jpg', a, 'old camera/a.jpg'],
@@ -611,6 +627,7 @@ test('old photos (Step 26b): which ones, in batches, the picture, reviewed', asy
       ['2012/05/d2.jpg', d2],
       ['2011/03/e.jpg', e, null, 'Snow day'],
       ['2010/06/f.heic', f],
+      ['2016/04/g.jpg', g, 'DCIM/Camera/g.jpg'],
     ]) {
       index.photos[md5(buf)] = { path: rel, size: buf.length, ...(from ? { from } : {}), ...(description ? { description } : {}) };
     }
@@ -628,7 +645,7 @@ test('old photos (Step 26b): which ones, in batches, the picture, reviewed', asy
     const inv = await api('POST', '/v1/inventory', { token, json: { files: [{ rel: 'DCIM/Camera/b.jpg', size: b.length }] } });
     assert.strictEqual(inv.status, 200);
 
-    // b is on the phone, d and d2 are tagged; e's Takeout .json isn't a tag file.
+    // b is on the phone, d and d2 are tagged, g was skipped; e's Takeout .json isn't a tag file.
     const overview = await api('GET', '/v1/old', { token });
     assert.deepStrictEqual(overview.body, {
       total: 4,
@@ -712,13 +729,18 @@ test("notes for restoring on a new phone: every photo's and Moment's (waiting on
     put('.photoapp/index.json', { version: 1, photos: { [h('d')]: { path: '2012/05/d.jpg', size: 5 } } });
     // Waiting for its photo, which never reached the backup.
     put(`.photoapp/orphan-sidecars/${h('e')}.json`, { hashAlgorithm: 'md5', contentHash: h('e'), caption: 'waiting' });
+    // A phone's skipped list (2026-11-23): sent as it is; the app reads it as skips.
+    const skipList = { type: 'photoapp-skipped', version: 1, photos: [{ contentHash: h('f') }] };
+    put('.photoapp/skipped/a-phone.json', skipList);
 
     const r = await api('GET', '/v1/notes', { token });
     assert.strictEqual(r.status, 200);
     assert.strictEqual(r.body.pcName, 'TEST-PC');
     assert.strictEqual(r.body.photos, 3);
     assert.strictEqual(r.body.moments, 1);
-    const by = Object.fromEntries(r.body.records.map((x) => [x.contentHash || x.id, x]));
+    const lists = r.body.records.filter((x) => x.type === 'photoapp-skipped');
+    assert.deepStrictEqual(lists, [skipList]);
+    const by = Object.fromEntries(r.body.records.filter((x) => !x.type).map((x) => [x.contentHash || x.id, x]));
     assert.deepStrictEqual(Object.keys(by).sort(), [h('a'), h('b'), h('d'), h('e')]);
     assert.strictEqual(by[h('a')].caption, 'Lake');
     assert.strictEqual(by[h('d')].note, 'beside');

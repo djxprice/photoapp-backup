@@ -28,10 +28,12 @@ test('which photos are old photos', () => {
     [H(5)]: { path: '2011/03/e.jpg', size: 50 }, // skipped earlier
     [H(6)]: { path: '2010/02/f.jpg', size: 60 }, // gone from the PC
     [H(7)]: { path: 'undated/g.jpg', size: 70 },
+    [H(8)]: { path: '2016/04/h.jpg', size: 80, from: 'DCIM/Camera/h.jpg' }, // skipped on the phone, then freed
     nothex: { path: '2010/01/x.jpg', size: 1 },
   };
   const list = oldPhotos(photos, {
     done: { [H(5)]: { skipped: true } },
+    skipped: new Set([H(8)]),
     onPhone: new Set(['DCIM/Camera/b.jpg|20', 'DCIM/Camera/c.jpg|999']), // c is a different file now
     tagged: (p) => p === '2012/05/d.jpg',
     exists: (p) => p !== '2010/02/f.jpg',

@@ -498,6 +498,10 @@ function createReceiver({
       if (Array.isArray(body && body.tagFiles) && body.tagFiles.length) {
         if (!safeRel(tagFolder)) throw fail(400, 'tag folder path not valid');
         for (const t of body.tagFiles) {
+          if (t && t.name === 'skipped.json' && typeof t.text === 'string') {
+            saveSkipList(f, phoneId, t.text);
+            continue;
+          }
           if (!t || !isSidecarName(String(t.name || '')) || typeof t.text !== 'string') continue;
           const rel = `${tagFolder}/${t.name}`;
           const sig = `text|${sha256(t.text).toString('base64')}`;
@@ -593,6 +597,10 @@ function createReceiver({
   // like any photo's; skipped and reviewed ones are kept in old-photos.json so they
   // aren't offered again.
   const phonesDir = (f) => path.join(f.meta, 'phones');
+  // Each phone's skipped list (the app's "skipped.json", 2026-11-23): the
+  // photos it reviewed and skipped. Kept after a phone is forgotten: a new
+  // phone's Restore Notes brings those skips back.
+  const skippedDir = (f) => path.join(f.meta, 'skipped');
   const phoneFilesFile = (f, phoneId) => path.join(phonesDir(f), `${phoneId}.json`);
   const oldDoneFile = (f) => path.join(f.meta, 'old-photos.json');
   let oldCache = null; // { to, at, list }: the list takes a pass over the backup
@@ -620,6 +628,41 @@ function createReceiver({
     return set;
   }
 
+  // A phone's skipped list from its backup: kept when it is one.
+  function saveSkipList(f, phoneId, text) {
+    let list = null;
+    try {
+      const r = parseLeadingJson(text);
+      list = r && r.value;
+    } catch {
+      return;
+    }
+    if (!list || list.type !== 'photoapp-skipped' || !Array.isArray(list.photos)) return;
+    writeJson(path.join(skippedDir(f), `${phoneId}.json`), list);
+    oldCache = null;
+  }
+
+  // Every phone's skipped lists.
+  function skipLists(f) {
+    const dir = skippedDir(f);
+    const out = [];
+    for (const name of fs.existsSync(dir) ? fs.readdirSync(dir) : []) {
+      if (!/\.json$/.test(name)) continue;
+      const list = readJson(path.join(dir, name), null);
+      if (list && list.type === 'photoapp-skipped' && Array.isArray(list.photos)) out.push(list);
+    }
+    return out;
+  }
+
+  // The md5 of every photo skipped on a phone.
+  function skippedHashes(f) {
+    const set = new Set();
+    for (const list of skipLists(f)) {
+      for (const p of list.photos) if (p && /^[0-9a-f]{32}$/.test(String(p.contentHash || ''))) set.add(p.contentHash);
+    }
+    return set;
+  }
+
   // A PicJot tag file (not, say, a Google Takeout .json, which is named the
   // same way).
   function isTagFile(file) {
@@ -638,6 +681,7 @@ function createReceiver({
     const on = (p) => path.join(f.to, fromPosix(p));
     const list = oldPhotos(index.photos, {
       done,
+      skipped: skippedHashes(f),
       onPhone: onPhones(f),
       exists: (p) => fs.existsSync(on(p)),
       // In the tag folder, or (not moved in yet: a backup does that) beside it.
@@ -799,7 +843,8 @@ function createReceiver({
     for (const name of walk(path.join(f.meta, 'orphan-sidecars'))) {
       if (/^[0-9a-f]{32}\.json$/.test(name)) take(`.photoapp/orphan-sidecars/${name}`);
     }
-    const records = [...byHash.values(), ...moments.values()];
+    // The phones' skipped lists, as they are (the app reads them as skips).
+    const records = [...byHash.values(), ...moments.values(), ...skipLists(f)];
     return { pcName, photos: byHash.size, moments: moments.size, records };
   }
 
