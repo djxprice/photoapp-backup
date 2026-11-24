@@ -42,6 +42,7 @@ const { pipeline } = require('stream/promises');
 const { runBackup, importEstimate } = require('./backup');
 const { createCertificate } = require('./lib/cert');
 const { readJson, writeJson, readHead, walk, placeVerified, freeBytes: driveFree, sizeText } = require('./lib/files');
+const { isSkipList, mergeSkipLists } = require('./lib/skipped');
 const { isImage, isSidecarName, baseName, TAG_FOLDER, sidecarPathFor, besideSidecarPathFor, legacySidecarPathFor, parseLeadingJson } = require('./lib/plan');
 const { readExifDate } = require('./lib/exif');
 const { oldPhotos, summary: oldSummary, pickBatch, kindOf, yearOf } = require('./lib/old');
@@ -340,6 +341,7 @@ function createReceiver({
       : [];
     for (const id of replaced) {
       delete config.phones[id];
+      moveSkipList(id, phoneId);
       dropPhoneFiles(id);
       if (active && active.phoneId === id) active = null;
     }
@@ -637,9 +639,23 @@ function createReceiver({
     } catch {
       return;
     }
-    if (!list || list.type !== 'photoapp-skipped' || !Array.isArray(list.photos)) return;
-    writeJson(path.join(skippedDir(f), `${phoneId}.json`), list);
+    if (!isSkipList(list)) return;
+    const file = path.join(skippedDir(f), `${phoneId}.json`);
+    // Merged, not replaced: a phone just reinstalled lists few or none yet.
+    writeJson(file, mergeSkipLists(readJson(file, null), list));
     oldCache = null;
+  }
+
+  // A phone paired again goes on with its earlier pairing's list, so what it
+  // unskips from now on leaves it (best effort, as dropPhoneFiles).
+  function moveSkipList(fromId, toId) {
+    try {
+      const dir = skippedDir(folder());
+      const from = path.join(dir, `${fromId}.json`);
+      if (fs.existsSync(from)) fs.renameSync(from, path.join(dir, `${toId}.json`));
+    } catch {
+      // folder not available
+    }
   }
 
   // Every phone's skipped lists.
@@ -649,7 +665,7 @@ function createReceiver({
     for (const name of fs.existsSync(dir) ? fs.readdirSync(dir) : []) {
       if (!/\.json$/.test(name)) continue;
       const list = readJson(path.join(dir, name), null);
-      if (list && list.type === 'photoapp-skipped' && Array.isArray(list.photos)) out.push(list);
+      if (isSkipList(list)) out.push(list);
     }
     return out;
   }

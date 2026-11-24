@@ -3,6 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 
 const { isRaw, yearOf, kindOf, oldPhotos, summary, pickBatch, MAX_BATCH } = require('../lib/old');
+const { mergeSkipLists } = require('../lib/skipped');
 const { rawPreview, jpegEnd, MIN_PREVIEW } = require('../lib/rawpreview');
 const { jpeg } = require('./jpegs');
 
@@ -17,6 +18,17 @@ test('photo kinds and years', () => {
   assert.equal(kindOf('a/x.png'), 'png');
   assert.equal(yearOf('2009/07/IMG_1.jpg'), 2009);
   assert.equal(yearOf('undated/IMG_1.jpg'), null);
+});
+
+test('a skipped list is merged, never replaced: a reinstalled phone lists few or none yet', () => {
+  const list = (by, ...ns) => ({ type: 'photoapp-skipped', version: 1, by, photos: ns.map((n) => ({ contentHash: H(n), by })) });
+  const hashes = (l) => l.photos.map((p) => p.contentHash);
+  const before = list('one', 1, 2);
+  assert.deepEqual(hashes(mergeSkipLists(before, list('two'))), [H(1), H(2)], 'nothing restored yet');
+  assert.deepEqual(hashes(mergeSkipLists(before, list('two', 3))), [H(1), H(2), H(3)]);
+  assert.deepEqual(hashes(mergeSkipLists(before, list('one', 2))), [H(2)], 'unskipped by the install that listed it');
+  assert.deepEqual(hashes(mergeSkipLists(null, list('one', 1))), [H(1)]);
+  assert.deepEqual(hashes(mergeSkipLists({ not: 'a list' }, list('one', 1))), [H(1)]);
 });
 
 test('which photos are old photos', () => {

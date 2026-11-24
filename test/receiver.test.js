@@ -189,7 +189,7 @@ function postForm(url, fields, headers = {}) {
 }
 
 test('the same phone pairing again replaces its earlier pairing; another phone doesn\'t', async () => {
-  const { receiver, api, configDir } = await setup();
+  const { to, receiver, api, configDir } = await setup();
   try {
     const pairAs = async (json) => {
       const r = await api('POST', '/v1/pair', { json: { code: receiver.currentPairing().code, ...json } });
@@ -201,7 +201,13 @@ test('the same phone pairing again replaces its earlier pairing; another phone d
     const keyB = 'B'.repeat(43);
 
     const first = await pairAs({ phoneName: 'Galaxy', deviceKey: keyA });
+    // Its skipped list goes on with it (2026-11-24): left under the earlier
+    // pairing, what it unskips from now on would never leave the list.
+    const skipsOf = (token) => path.join(to, '.photoapp', 'skipped', `${token.split('.')[0]}.json`);
+    fs.mkdirSync(path.dirname(skipsOf(first)), { recursive: true });
+    fs.writeFileSync(skipsOf(first), JSON.stringify({ type: 'photoapp-skipped', version: 1, by: 'one', photos: [{ contentHash: 'a'.repeat(32), by: 'one' }] }));
     const second = await pairAs({ phoneName: 'Galaxy', deviceKey: keyA });
+    assert.ok(!fs.existsSync(skipsOf(first)) && fs.existsSync(skipsOf(second)), 'the list is kept, for the new pairing');
     assert.strictEqual(receiver.status().phoneCount, 1, 'replaced, not added');
     assert.strictEqual((await inv(first)).status, 401, 'the earlier token stops working');
     assert.strictEqual((await inv(second)).status, 200);
